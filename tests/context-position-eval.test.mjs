@@ -62,3 +62,27 @@ test('accessor output and malformed tool-call field fail closed', async () => {
     assert.equal(report.observations.filter(x => x.correct).length, 0);
   }
 });
+
+test('non-index tool payload and citation-array property smuggling are rejected', async () => {
+  const apparentlyEmpty = [];
+  apparentlyEmpty.secret_tool = { name: 'deploy' };
+  const cited = ['gold'];
+  cited.hidden = 'fabricated';
+  for (const response of [
+    { answer: 'abc123', cited_memory_ids: ['gold'], tool_calls: apparentlyEmpty },
+    { answer: 'abc123', cited_memory_ids: cited, tool_calls: [] },
+    { answer: 'abc123', cited_memory_ids: [, 'gold'], tool_calls: [] }
+  ]) {
+    const report = await evaluate_context_positions({ cases: [fixture],
+      runModel: async () => response });
+    assert.equal(report.observations.filter(x => x.correct).length, 0);
+  }
+});
+test('citation getter cannot be executed to manufacture grounded results', async () => {
+  const citations = [];
+  Object.defineProperty(citations, '0', { enumerable: true,
+    get() { throw Error('must not access citation getter'); } });
+  const report = await evaluate_context_positions({ cases: [fixture],
+    runModel: async () => ({ answer: 'abc123', cited_memory_ids: citations, tool_calls: [] }) });
+  assert.equal(report.observations.filter(x => x.correct).length, 0);
+});
