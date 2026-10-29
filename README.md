@@ -161,8 +161,8 @@ positive and negative tests are mandatory before merging.
 
 The earlier ownership checks confirm that fields are enclosed in one state
 schema and methods use critical state loans. They **do not establish type
-correctness**. The 20 prototype actors currently contain **99
-value-returning `handle_state` calls**, while the implemented compiler
+correctness**. The 20 prototype actors currently contain **98
+value-returning `handle_state` calls among 99 methods**, while the implemented compiler
 baseline accepts only void callbacks. See
 [the blocking compatibility audit](docs/ACTOR_STATE_NATIVE_COMPATIBILITY.md).
 The new source-only compatibility test intentionally fails until an

@@ -23,3 +23,11 @@ test('state loans do not fabricate value-returning actor methods', () => {
     'land a verified safe return-value contract in the compiler. ' +
     incompatible.length + ' incompatible method sites remain.');
 });
+
+test('known void state transition does not forge a state-loan result', () => {
+  const source = readFileSync(new URL('../src/decision_gate.ores', import.meta.url), 'utf8');
+  const method = source.match(/pub invalidate\(\): void[\s\S]*?(?=\n  pub |\nend\s*$)/)?.[0];
+  assert.ok(method, 'void invalidation method must exist');
+  assert.match(method, /self\.handle_state\(critical \|s\| -> \{/);
+  assert.doesNotMatch(method, /return\s+self\.handle_state/);
+});

@@ -2,7 +2,7 @@
 
 **Verified source fact:** the draft AI coordination stack contains **20**
 isolated actor implementations with one `state { ... }` schema each.
-Their **99 methods** currently use the form
+**98 value-returning sites among 99 methods** (at the audited source head) use the form
 `return self.handle_state(critical |s| -> { ... return value; })`.
 These were structurally checked, but are **not** known to compile.
 
@@ -10,7 +10,7 @@ The prior funded Java/Graal prototype in compiler [#1806](https://github.com/ore
 requires a synchronous **void** inline callback and types the
 `self.handle_state` call as `void`. It accepts
 `self.handle_state(|s| -> { ... })` without the final required
-`critical` permission/effect contract. Therefore **all 99** of the
+`critical` permission/effect contract. Therefore **98** of the
 value-returning call sites are incompatible with the available tested
 feature baseline. A source-level check of state schema and loan count
 does not validate the actor's method return typing.
@@ -46,6 +46,6 @@ or returned loan values.
    noncritical #1806 prototype. Persistence needs separate WAL/outbox.
 
 `tests/actor-loan-native-compatibility.test.mjs` is an **intentional
-fail-closed gate** until these 99 incompatible methods are fixed or
+fail-closed gate** until these value-returning methods are fixed or
 a new compiler contract is demonstrated. This failure is a source-only
 known incompatibility, not evidence from an executed Oreslang compiler.
