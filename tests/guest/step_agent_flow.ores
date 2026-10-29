@@ -1,0 +1,136 @@
+// Native Oreslang step-coordination acceptance candidate, adapted from the
+// step-function-demo coordinator-state and preview-only workflows.
+// This is a FIXTURE-ONLY, non-durable worker graph. No authenticated approval,
+// GitHub evidence, tool execution, storage, timeout or supervisor recovery.
+define actor AgentRunGuard as
+  let String phase = "created";
+
+  receive(ActorMail<String> mail): void {
+    if mail.value == "tenant-a:run-1:complete"; do
+      if self.phase == "running"; do
+        self.phase = "completed";
+        self.send("completed");
+        self.end();
+        return;
+      fi
+      self.send("out-of-order");
+      return;
+    fi
+    if mail.value == "tenant-a:run-1:start"; do
+      if self.phase == "created"; do
+        self.phase = "running";
+        self.send("started");
+        return;
+      fi
+      self.send("duplicate-start");
+      return;
+    fi
+    self.send("rejected");
+    return;
+  }
+end
+
+define actor AgentResearchStep as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "repo:fixture"; do
+      self.send("evidence-fixture");
+    else
+      self.send("research-rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+define actor AgentReviewStep as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "evidence-fixture"; do
+      self.send("reviewed-fixture-only");
+    else
+      self.send("review-rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+define actor AgentPreviewStep as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "reviewed-fixture-only"; do
+      self.send("preview-only");
+    else
+      self.send("preview-rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+pub async routine main(): void {
+  val guard = await spawn AgentRunGuard();
+  guard.send("tenant-a:run-1:complete");
+  val premature = (await guard.outputs.next()).value.unwrap();
+  if premature.value != "out-of-order"; do
+    stdio.stdout.write("agent-step:unsafe-early");
+    return;
+  fi
+
+  guard.send("tenant-b:run-1:start");
+  val foreign = (await guard.outputs.next()).value.unwrap();
+  if foreign.value != "rejected"; do
+    stdio.stdout.write("agent-step:unsafe-foreign");
+    return;
+  fi
+
+  guard.send("tenant-a:run-1:start");
+  val started = (await guard.outputs.next()).value.unwrap();
+  if started.value != "started"; do
+    stdio.stdout.write("agent-step:unsafe-start");
+    return;
+  fi
+
+  guard.send("tenant-a:run-1:start");
+  val duplicate = (await guard.outputs.next()).value.unwrap();
+  if duplicate.value != "duplicate-start"; do
+    stdio.stdout.write("agent-step:unsafe-duplicate");
+    return;
+  fi
+
+  val research = await spawn AgentResearchStep();
+  research.send("repo:fixture");
+  val evidence = (await research.outputs.next()).value.unwrap();
+  await research.get_done();
+  if evidence.value != "evidence-fixture"; do
+    stdio.stdout.write("agent-step:research-failed");
+    return;
+  fi
+
+  val review = await spawn AgentReviewStep();
+  review.send(evidence.value);
+  val reviewed = (await review.outputs.next()).value.unwrap();
+  await review.get_done();
+  if reviewed.value != "reviewed-fixture-only"; do
+    stdio.stdout.write("agent-step:review-failed");
+    return;
+  fi
+
+  // This is a no-effect preview worker, not deployment authorization.
+  val preview = await spawn AgentPreviewStep();
+  preview.send(reviewed.value);
+  val previewed = (await preview.outputs.next()).value.unwrap();
+  await preview.get_done();
+  if previewed.value != "preview-only"; do
+    stdio.stdout.write("agent-step:preview-failed");
+    return;
+  fi
+
+  guard.send("tenant-a:run-1:complete");
+  val complete = (await guard.outputs.next()).value.unwrap();
+  await guard.get_done();
+  if complete.value != "completed"; do
+    stdio.stdout.write("agent-step:guard-failed");
+    return;
+  fi
+  stdio.stdout.write("agent-step:preview-complete");
+  return;
+}
