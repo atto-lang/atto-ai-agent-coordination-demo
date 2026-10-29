@@ -37,3 +37,7 @@ Run the source-only test by Node 22+ on a **trusted source-local** checkout:
     node --test tests/inference-reservation-source.test.mjs
 
 It only checks source-structure and fixed guard text. Real native positive and negative semantics need exact-head Java/Graal and LLVM compilers, actor state loan parser/effect and borrow-checker gates, live guest traces, and zero-step CI triage. After that, test .NET/Wasm/Forge parity and real vLLM/SGLang serving with pinned model/tokenizer versions, actual GPU memory/prefill/decode usage, throughput, fairness and tail latency. No external benchmark speedup can be imported as an Oreslang result. Do not merge on static tests alone.
+
+| I18 | Read generation, in_flight, reserved_capacity or phase with wrong tenant/model/revision | Each scoped `Result<int,String>` returns `Err`, including after draining; unauthorized handle access must separately be denied at capability boundary |
+
+**2026-10-29 audit:** the four read APIs now take `tenant`, `model`, and `exact_revision` and return `Result<int,String>`. This is a scope equality check, not identity authentication; do not claim it prevents impersonation. `release_verified` still accepts externally asserted confirmation and is a privileged adapter-only protocol, not a validated signature or safe public method. See PR #12 `docs/AI_ML_SECURITY_AUDIT_20261029.md` for P0 blockers.
