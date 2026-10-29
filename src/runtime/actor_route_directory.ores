@@ -46,6 +46,8 @@ define isolated actor ActorRouteDirectoryActor as
           if !s.active[i] ||
              s.incarnations[i] != expected_incarnation ||
              s.route_epochs[i] != expected_epoch ||
+             next_generation <= s.generations[i] ||
+             next_generation >= 2147483646 ||
              s.route_epochs[i] >= 2147483646; then
             return false;
           fi
