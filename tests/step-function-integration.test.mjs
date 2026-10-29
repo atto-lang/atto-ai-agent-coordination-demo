@@ -17,6 +17,7 @@ test('per-run step actor is sealed, bounded and state-loan scoped', () => {
   const result = auditActorSource(step);
   assert.deepEqual(result.problems, [], JSON.stringify(result));
   assert.equal(result.actor, 'StepRunActor');
+  assert.equal(result.fields, 13);
   assert.equal(result.writes, 6);
   assert.equal(result.reads, 3);
   assert.equal(result.methods, 9);
@@ -46,6 +47,10 @@ test('idempotency keys are unique, retries bounded, unknown cannot rerun', () =>
   assert.match(begin,/\(s\.phase != 1 && s\.phase != 3\)/);
   assert.doesNotMatch(begin,/s\.phase == 7/);
   assert.match(step,/s\.phase = 7;/);
+  assert.match(step,/s\.phase != 7 \|\|/);
+  assert.match(step,/for \(const prior_receipt of s\.receipt_history\)/);
+  assert.match(step,/prior_receipt == evidence_receipt; then return false;/);
+  assert.match(step,/prior_receipt == committed_receipt; then return false;/);
 });
 test('cancel refuses in-flight and unknown effects; reconciliation is explicit', () => {
   const cancel = step.slice(step.indexOf('  pub cancel_before_dispatch('),step.indexOf('  pub phase_of('));
