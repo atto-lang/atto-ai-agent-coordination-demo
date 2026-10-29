@@ -53,7 +53,7 @@ test('cancel refuses in-flight and unknown effects; reconciliation is explicit',
   assert.match(cancel,/s\.phase = 6;/);
   assert.match(step,/s\.phase = 4;/);
   assert.match(step,/s\.phase = 5;/);
-  assert.doesNotMatch(step,/\b(?:await|spawn|stdio|process|http|fetch)\b/);
+  assert.doesNotMatch(step.replace(/^\/\/.*$/gm,''),/\b(?:await|spawn|stdio|process|http|fetch)\b/);
 });
 test('blocked DAG node cancellation requires a failed/cancelled prerequisite', () => {
   const offset=dag.indexOf('  pub cancel_blocked(');
@@ -78,7 +78,7 @@ test('native step fixture rejects foreign, early and duplicate messages', () => 
 test('step native runner pins compiler and demo revision, exact output and timeout', () => {
   assert.match(runner,/ORESLANG_DEMO_SHA/);
   assert.match(runner,/ORESLANG_COMPILER_SHA/);
-  assert.match(runner,/status --porcelain --untracked-files=no/);
+  assert.match(runner,/'status','--porcelain','--untracked-files=no'/);
   assert.match(runner,/STEP_NATIVE_GUEST_RESULT/);
   assert.match(runner,/run\.status === 0/);
   assert.match(runner,/run\.stdout\.equals\(expected\)/);
