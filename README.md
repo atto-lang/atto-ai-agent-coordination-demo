@@ -27,6 +27,18 @@ This subsystem tracks **untrusted observations separately from verified facts**,
 
 Read [the memory-pipeline architecture](docs/MEMORY_PIPELINE.md) and the [native guest acceptance matrix](tests/memory-guest-acceptance.md). The source-only checks live in `tests/memory-source-contracts.test.mjs` and run alongside the existing graph contracts and JS reference models.
 
+## Agent operating-runtime graph contracts
+
+Three additional `isoactor` prototypes under `src/runtime/` extend the **actor graph** and **execution graph** while reusing `KnowledgeGraphActor` as a knowledge-graph shard and `DecisionTreeActor` / `DecisionGateActor` for deterministic decisions:
+
+| Actor | Purpose |
+| --- | --- |
+| `ActorRouteDirectoryActor` | Stable logical names, incarnation/generation/route-epoch-pinned placement hints |
+| `ExecutionGraphActor` | Bounded dependency DAG, parallel ready nodes, fan-in, revision-checked transitions |
+| `WorkflowEffectLedgerActor` | One-time effect preparation, dispatched/unknown status, explicit external reconciliation |
+
+The graph/placement model is **not** a distributed actor transport; workflow effect bookkeeping is **not** durable storage, exactly-once delivery or tool execution. See [the actor/runtime architecture](docs/AGENT_RUNTIME_ARCHITECTURE.md) and [native runtime acceptance matrix](tests/actor-runtime-acceptance.md).
+
 ## Example: repository intelligence graph
 
 A code-indexer ingests symbols, files and dependency edges into a `KnowledgeGraphActor` shard, then caches revision-keyed query results in a `KnowledgeCacheActor`. A code-review agent requests neighbors, asks `DecisionTreeActor` which checks to run, and opens a `DecisionGateActor` on the exact commit SHA. An authorized control-plane caller supplies actual executed CI evidence and independently authenticated approval; the actor must reject zero-step checks, stale commits or stale epochs. `AgentCoordinatorActor` limits concurrent tasks, while `AgentWorkflowActor` tracks the state of one action.

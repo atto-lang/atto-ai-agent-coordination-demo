@@ -1,0 +1,111 @@
+// In-memory protocol model for idempotent external effects.
+// This ledger is NOT a WAL or durable outbox. After dispatch, an unknown
+// outcome must be reconciled externally; never silently execute it again.
+isoactor WorkflowEffectLedgerActor {
+  let Array<String> effect_keys = new Array<String>();
+  let Array<String> workflow_ids = new Array<String>();
+  let Array<String> exact_revisions = new Array<String>();
+  let Array<String> correlation_ids = new Array<String>();
+  let Array<String> result_receipts = new Array<String>();
+  let Array<int> states = new Array<int>();
+  let int transition_epoch = 0;
+
+  // State 0 prepared, 1 dispatched/unknown, 2 externally confirmed,
+  // 3 cancelled before dispatch, 4 externally proved not applied.
+  pub fnc prepare(String workflow_id, String exact_revision,
+                  String effect_key, String correlation_id): bool {
+    if workflow_id == "" || exact_revision == "" ||
+       effect_key == "" || correlation_id == "" ||
+       self.effect_keys.size >= 256 ||
+       self.transition_epoch >= 2147483646; then return false; fi
+    for (const existing of self.effect_keys) {
+      if existing == effect_key; then return false; fi
+    }
+    self.effect_keys.add(effect_key);
+    self.workflow_ids.add(workflow_id);
+    self.exact_revisions.add(exact_revision);
+    self.correlation_ids.add(correlation_id);
+    self.result_receipts.add("");
+    self.states.add(0);
+    self.transition_epoch = self.transition_epoch + 1;
+    return true;
+  }
+
+  // The adapter must persist the prepared command and its idempotency key
+  // before issuing the external side effect. Dispatch yields UNKNOWN.
+  pub fnc dispatch(String effect_key, String exact_revision,
+                   int expected_epoch): bool {
+    if expected_epoch != self.transition_epoch ||
+       self.transition_epoch >= 2147483646; then return false; fi
+    let int i = 0;
+    for (const existing of self.effect_keys) {
+      if existing == effect_key && self.exact_revisions[i] == exact_revision &&
+         self.states[i] == 0; then
+        self.states[i] = 1;
+        self.transition_epoch = self.transition_epoch + 1;
+        return true;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // Called only after an independently authenticated tool receipt or
+  // definitive reconciliation, never solely from a model assertion.
+  pub fnc reconcile(String effect_key, String exact_revision,
+                    int expected_epoch, String receipt,
+                    bool applied): bool {
+    if receipt == "" || expected_epoch != self.transition_epoch ||
+       self.transition_epoch >= 2147483646; then return false; fi
+    let int i = 0;
+    for (const existing of self.effect_keys) {
+      if existing == effect_key && self.exact_revisions[i] == exact_revision &&
+         self.states[i] == 1; then
+        self.result_receipts[i] = receipt;
+        if applied; then
+          self.states[i] = 2;
+        else
+          self.states[i] = 4;
+        fi
+        self.transition_epoch = self.transition_epoch + 1;
+        return true;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // Never cancel an already-dispatched (uncertain) effect.
+  pub fnc cancel_prepared(String effect_key, String exact_revision,
+                         int expected_epoch): bool {
+    if expected_epoch != self.transition_epoch ||
+       self.transition_epoch >= 2147483646; then return false; fi
+    let int i = 0;
+    for (const existing of self.effect_keys) {
+      if existing == effect_key && self.exact_revisions[i] == exact_revision &&
+         self.states[i] == 0; then
+        self.states[i] = 3;
+        self.transition_epoch = self.transition_epoch + 1;
+        return true;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  pub fnc state_of(String effect_key, String exact_revision): Result<int, String> {
+    let int i = 0;
+    for (const existing of self.effect_keys) {
+      if existing == effect_key; then
+        if self.exact_revisions[i] != exact_revision; then
+          return Err("effect revision mismatch");
+        fi
+        return Ok(self.states[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("unknown effect");
+  }
+
+  pub fnc epoch(): int { return self.transition_epoch; }
+}

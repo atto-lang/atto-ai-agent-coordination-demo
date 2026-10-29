@@ -1,0 +1,103 @@
+// Logical actor identities and incarnation-aware placement hints.
+// A name is stable across relocations; its physical placement is not.
+// This actor is NOT a transport, authorization service, or durable registry.
+isoactor ActorRouteDirectoryActor {
+  let Array<String> actor_ids = new Array<String>();
+  let Array<int> incarnations = new Array<int>();
+  let Array<int> generations = new Array<int>();
+  let Array<int> route_epochs = new Array<int>();
+  let Array<String> placements = new Array<String>();
+  let Array<bool> active = new Array<bool>();
+
+  pub fnc register(String actor_id, int incarnation,
+                   int generation, String placement): bool {
+    if actor_id == "" || placement == "" ||
+       incarnation < 1 || generation < 1 ||
+       self.actor_ids.size >= 512; then return false; fi
+    for (const existing of self.actor_ids) {
+      if existing == actor_id; then return false; fi
+    }
+    self.actor_ids.add(actor_id);
+    self.incarnations.add(incarnation);
+    self.generations.add(generation);
+    self.route_epochs.add(1);
+    self.placements.add(placement);
+    self.active.add(true);
+    return true;
+  }
+
+  // Revokes the previous incarnation/route epoch. Actual delivery must
+  // revalidate this token to reject in-flight stale traffic.
+  pub fnc relocate(String actor_id, int expected_incarnation,
+                   int expected_epoch, int next_incarnation,
+                   int next_generation, String next_placement): bool {
+    if actor_id == "" || next_placement == "" ||
+       next_incarnation <= expected_incarnation ||
+       next_incarnation >= 2147483646 ||
+       next_generation < 1; then return false; fi
+    let int i = 0;
+    for (const existing of self.actor_ids) {
+      if existing == actor_id; then
+        if !self.active[i] ||
+           self.incarnations[i] != expected_incarnation ||
+           self.route_epochs[i] != expected_epoch ||
+           self.route_epochs[i] >= 2147483646; then
+          return false;
+        fi
+        self.incarnations[i] = next_incarnation;
+        self.generations[i] = next_generation;
+        self.placements[i] = next_placement;
+        self.route_epochs[i] = self.route_epochs[i] + 1;
+        return true;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // A caller may resolve only the exact identity token it was issued.
+  pub fnc resolve(String actor_id, int incarnation,
+                  int generation, int epoch): Result<String, String> {
+    let int i = 0;
+    for (const existing of self.actor_ids) {
+      if existing == actor_id; then
+        if !self.active[i] || self.incarnations[i] != incarnation ||
+           self.generations[i] != generation ||
+           self.route_epochs[i] != epoch; then
+          return Err("stale actor reference");
+        fi
+        return Ok(self.placements[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("unknown actor");
+  }
+
+  pub fnc retire(String actor_id, int incarnation,
+                 int epoch): bool {
+    let int i = 0;
+    for (const existing of self.actor_ids) {
+      if existing == actor_id; then
+        if !self.active[i] || self.incarnations[i] != incarnation ||
+           self.route_epochs[i] != epoch; then return false; fi
+        self.active[i] = false;
+        return true;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  pub fnc route_epoch(String actor_id): Result<int, String> {
+    let int i = 0;
+    for (const existing of self.actor_ids) {
+      if existing == actor_id; then
+        if !self.active[i]; then return Err("actor retired"); fi
+        return Ok(self.route_epochs[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("unknown actor");
+  }
+  pub fnc size(): int { return self.actor_ids.size; }
+}
