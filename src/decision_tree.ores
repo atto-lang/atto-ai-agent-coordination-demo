@@ -1,18 +1,52 @@
-// Actor-owned deterministic branch table for a bounded decision DAG.
-// Predicates are evaluated by callers, not by executing model-generated code.
-// A decision route is NOT permission to carry out the resulting action.
+// Actor-owned deterministic decision DAG. This is routing, never authorization.
+// Targets must already exist (terminal or branch). Insertion order therefore
+// prevents cycles and dangling targets without requiring recursive traversal.
+// Model-provided predicates are evaluated outside the actor by a trusted caller.
 isoactor DecisionTreeActor {
   let Array<String> node_ids = new Array<String>();
+  let Array<String> terminal_ids = new Array<String>();
   let Array<String> true_targets = new Array<String>();
   let Array<String> false_targets = new Array<String>();
   let int revision = 0;
 
-  pub fnc add_branch(String id, String on_true, String on_false): bool {
-    if id == "" || on_true == "" || on_false == "" ||
-       self.node_ids.size >= 256; then return false; fi
+  // Define terminal nodes before branches that reference them.
+  pub fnc add_terminal(String id): bool {
+    if id == "" || self.node_ids.size + self.terminal_ids.size >= 256 ||
+       self.revision >= 2147483646; then return false; fi
+    for (const existing of self.terminal_ids) {
+      if existing == id; then return false; fi
+    }
     for (const existing of self.node_ids) {
       if existing == id; then return false; fi
     }
+    self.terminal_ids.add(id);
+    self.revision = self.revision + 1;
+    return true;
+  }
+
+  // Branches may point only to earlier inserted nodes. This forbids
+  // forward references, self-edges and cycles by construction.
+  pub fnc add_branch(String id, String on_true, String on_false): bool {
+    if id == "" || on_true == "" || on_false == "" ||
+       self.node_ids.size + self.terminal_ids.size >= 256 ||
+       self.revision >= 2147483646; then return false; fi
+    for (const existing of self.terminal_ids) {
+      if existing == id; then return false; fi
+    }
+    for (const existing of self.node_ids) {
+      if existing == id; then return false; fi
+    }
+    let bool true_known = false;
+    let bool false_known = false;
+    for (const existing of self.terminal_ids) {
+      if existing == on_true; then true_known = true; fi
+      if existing == on_false; then false_known = true; fi
+    }
+    for (const existing of self.node_ids) {
+      if existing == on_true; then true_known = true; fi
+      if existing == on_false; then false_known = true; fi
+    }
+    if !true_known || !false_known; then return false; fi
     self.node_ids.add(id);
     self.true_targets.add(on_true);
     self.false_targets.add(on_false);
@@ -32,6 +66,19 @@ isoactor DecisionTreeActor {
         return Ok(self.false_targets[i]);
       fi
       i = i + 1;
+    }
+    return Err("not a branch");
+  }
+
+  pub fnc is_terminal(String id, int required_revision): Result<bool, String> {
+    if required_revision != self.revision; then
+      return Err("decision graph changed");
+    fi
+    for (const existing of self.terminal_ids) {
+      if existing == id; then return Ok(true); fi
+    }
+    for (const existing of self.node_ids) {
+      if existing == id; then return Ok(false); fi
     }
     return Err("unknown decision node");
   }
