@@ -41,3 +41,10 @@ These are **host tests, not native tests**. Execution is only established by an 
 5. Carry the new native contract into downstream inference (#14) and retrieval (#15) branches via exact-blob reconciliation and rebase their PR bases before merge; preserve raw-context quarantine and distinguish reference metrics from real model results.
 
 **Release/merge blocked until independently verified.**
+
+## Executed author-side checks and dependency reconciliation — 2026-10-29
+
+- Retrieved the exact committed bridge and context-admission blobs; executed **10/10** custom functional smoke cases in isolated V8 using a deliberately **mocked** signature verifier and UTF-8 byte counter, covering valid one-shot data-only send, replay, scope mismatch, malformed arrays/accessors, resolver spoofing, budget failure, stale head, denied capability and unknown remote completion. This is **not** the authored Node TAP/Ed25519 integration suite or a native guest.
+- Retrieved the nine memory actor files, the exact committed structural auditor and both memory source-policy suites from the merged branch. Executed **35/35** source-only cases in isolated V8. ContextAssemblyActor audit reported 6 fields, 7 methods, 3 writes, 4 reads, problems=[]. This is **not** native Oreslang execution.
+- Draft PRs #14 and #15 have been restacked as merge commits with this integration branch as a parent. Their PR bases now target PR #22 and exact changed-file comparisons show only their inference/evaluation feature files; no context admission or native quarantine reversion. Both remain draft.
+- Exact-head source-org Actions run #40928783411 on this integration PR, plus #40928890281 and #40928925958 on child PRs, failed with **zero job steps**. This is workflow runner/admission evidence; no code/tests ran there. Root cause needs separate authorized administrator analysis.
