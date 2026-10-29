@@ -21,10 +21,8 @@ try {
   dirty = execFileSync('git',['-C',demo,'status','--porcelain','--untracked-files=no'],opt).trim();
 } catch { fail('demo Git checkout unavailable'); }
 if (head !== expected || dirty) fail('demo revision mismatch or dirty tracked source');
-let checkedActors = 0;
-let checkedGuestSources = 0;
-let manifestSha = '';
-let verifiedGuest = null;
+let nativeCheck = null;
+let guestCheck = null;
 for (const script of scripts) {
   const file = fileURLToPath(new URL(script, import.meta.url));
   const result = spawnSync(process.execPath, [file], {
@@ -40,27 +38,29 @@ for (const script of scripts) {
   try {
     if (script === 'check-native-actors.mjs') {
       const report = receiptFromOutput(result.stdout, 'NATIVE_CHECK_RESULT');
-      const valid = verifyNativeCheck(report, demo, process.env.ORESLANG_COMPILER_SHA);
-      checkedActors = valid.checked_actors;
-      checkedGuestSources = valid.checked_guest_sources;
-      manifestSha = valid.manifest_sha256;
+      nativeCheck = verifyNativeCheck(report, demo, process.env.ORESLANG_COMPILER_SHA);
     } else if (script === 'run-native-guest.mjs') {
       const report = receiptFromOutput(result.stdout, 'NATIVE_GUEST_RESULT');
-      verifiedGuest = verifyNativeGuest(report, demo, process.env.ORESLANG_COMPILER_SHA);
+      guestCheck = verifyNativeGuest(report, demo, process.env.ORESLANG_COMPILER_SHA);
     } else {
-      fail('unexpected native gate');
+      fail('unexpected native acceptance gate');
     }
   } catch (error) {
-    fail('invalid ' + script + ' evidence: ' + String(error.message));
+    fail('invalid native evidence for ' + script + ': ' + String(error.message));
   }
 }
-if (!verifiedGuest || checkedActors < 20 || checkedGuestSources < 1)
+if (!nativeCheck || !guestCheck || nativeCheck.checked_actors < 20 ||
+    nativeCheck.checked_guest_sources !== 2 ||
+    nativeCheck.negative_native_checks !== 1 ||
+    guestCheck.guest_scenarios !== 2)
   fail('native acceptance incomplete');
 
 console.log('NATIVE_ACCEPTANCE_RESULT ' + JSON.stringify({demo_head:head,
-  demo_tree:tree, checked_actors:checkedActors, checked_guest_sources:checkedGuestSources,
-  manifest_sha256:manifestSha, guest_scenarios:verifiedGuest.guest_scenarios,
-  guest_fixture_sha256:verifiedGuest.guest_fixture_sha256,
-  guest_oracle_sha256:verifiedGuest.guest_oracle_sha256,
-  passed:true,
-  scope:'Java checks and one guest stdout; no crash recovery'}));
+  demo_tree:tree, checked_actors:nativeCheck.checked_actors,
+  positive_native_checks:nativeCheck.positive_native_checks,
+  negative_native_checks:nativeCheck.negative_native_checks,
+  checked_guest_sources:nativeCheck.checked_guest_sources,
+  native_manifest_sha256:nativeCheck.manifest_sha256,
+  guest_scenarios:guestCheck.guest_scenarios,
+  verified_guest_hashes:guestCheck.verified_guest_hashes, passed:true,
+  scope:'Java positive and negative checks plus two guest stdout oracles; no crash recovery'}));

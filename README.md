@@ -69,8 +69,10 @@ demo checkout's exact Git HEAD. Set it with:
 export ORESLANG_DEMO_SHA="$(git rev-parse HEAD)"
 ```
 
-It invokes the compiler's real `--check` mode on all eight actor files and
-the pipeline, then executes the pipeline and requires exact stdout. A clean,
+It invokes the compiler's real `--check` mode on all eight actor files
+plus **two** guest fixtures, and also requires the Java type checker to reject
+an intentionally invalid `ActorMail<String>` send with a targeted diagnostic.
+The two executed guests must both match byte-exact output oracles. A clean,
 built compiler and dependencies remain prerequisites. See the acceptance doc
 for Maven build commands. The latest hosted CI job still has no executing
 steps, so this gate is **committed but not yet executed against Java**.
@@ -80,7 +82,7 @@ The runner rejects missing/mismatched source revisions, missing build artifacts,
 nonzero exits, timeouts and stdout drift. **Nothing in the existing Node.js
 model or source-contract tests establishes native Oreslang compilation.** The
 `executed` message is deliberately inert; it does not authorize or invoke tools.
-Direct actor-to-actor forwarding, durable recovery, sandboxing, JDK25 exact-head
+Full actor-to-actor forwarding, durable recovery, sandboxing, JDK25 exact-head
 evidence and five-backend parity remain unverified.
 
 ## Reference coordination, durability and interoperability
@@ -115,19 +117,26 @@ Treat the token/revision above as demonstration placeholders; do not use
 the sample secret in a deployment. The gateway deliberately has no write,
 tool-execution or inference endpoint.
 
+## Direct worker-to-worker mailbox fixture (native verification pending)
+
+`tests/guest/direct_agent_hop.ores` sends an actual typed
+`ActorRef<DirectAnalysisAgent>` through a research worker's mailbox. The
+research worker sends its evidence **directly** to the analysis worker, using
+the transferred actor reference. Main still forwards the analysis result to
+the execution worker. This tests one direct hop, not the proposed
+`actorA pipe actorB` operator (currently unsupported for execution).
+
+The exact expected stdout is `evidence-ready|approved|executed`. The Java
+guest launcher has **not yet run** on the new fixture. Source-only checks do
+not establish mailbox correctness, physical isolation or end-to-end recovery.
+
 ## Native compiler gate across all actors
 
 With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and three runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
 
-## Native evidence hardening
+## Native CI evidence hardening
 
-The combined native acceptance runner now verifies individual per-file
-compiler outcomes, source SHA-256 hashes, and the exact guest execution
-receipt. The positive/negative evidence test is
-`node --test tests/native-evidence.test.mjs`. This tests **receipt
-consistency**, not native Oreslang execution. The transfer/runner safety
-policy and open evidence gaps are in
-[Native CI evidence audit](docs/CI_NATIVE_EVIDENCE_AUDIT.md).
+The combined gate now verifies a complete source-hash-identified compiler manifest, including the targeted negative mailbox type check, **and both** executed guest receipts. It fails closed on truncated, forged, stale or missing reports. The validator's regression tests are in `tests/native-evidence.test.mjs`, and alternate-runner authorization constraints in [CI evidence audit](docs/CI_NATIVE_EVIDENCE_AUDIT.md). Passing these **Node receipt tests** does not establish successful native compilation or crash recovery.
 
 ## Validation
 

@@ -1,0 +1,65 @@
+// Compiler-targeted native guest fixture: real ActorRef<T> passed as a
+// capability in typed mailbox mail, then one worker sends directly to another.
+// Research -> Analysis is DIRECT; Analysis -> Execution is still main-mediated.
+// Not yet Java guest executed, and no durable or authenticated tool effects.
+define actor DirectAnalysisAgent as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "evidence-ready" then
+      self.send("approved");
+    else
+      self.send("rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+define actor DirectResearchAgent as
+  receive(ActorMail<ActorRef<DirectAnalysisAgent>> mail): void {
+    // This is the direct worker-to-worker message.
+    mail.value.send("evidence-ready");
+    self.send("evidence-ready");
+    self.end();
+    return;
+  }
+end
+
+define actor DirectExecutionAgent as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "approved" then
+      self.send("executed");
+    else
+      self.send("rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+pub async routine main(): void {
+  val researcher = spawn DirectResearchAgent();
+  val analyzer = spawn DirectAnalysisAgent();
+  val executor = spawn DirectExecutionAgent();
+  await researcher.get_ready();
+  await analyzer.get_ready();
+  await executor.get_ready();
+
+  // The receiving actor holds the live ActorRef, not a string destination.
+  researcher.send(analyzer);
+  val evidence = (await researcher.outputs.next()).value.unwrap();
+  val decision = (await analyzer.outputs.next()).value.unwrap();
+
+  executor.send(decision.value);
+  val result = (await executor.outputs.next()).value.unwrap();
+
+  stdio.stdout.write(evidence.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(decision.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(result.value);
+
+  await researcher.get_done();
+  await analyzer.get_done();
+  await executor.get_done();
+  return;
+}

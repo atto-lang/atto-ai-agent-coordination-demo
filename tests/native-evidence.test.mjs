@@ -8,7 +8,7 @@ import { receiptFromOutput, verifyNativeCheck, verifyNativeGuest } from '../scri
 
 const SHA = 'a'.repeat(40);
 const digest = content => createHash('sha256').update(content).digest('hex');
-const sourceDirs = [['src', 8], ['src/memory', 9], ['src/runtime', 3], ['tests/guest', 1]];
+const sourceDirs = [['src', 8], ['src/memory', 9], ['src/runtime', 3]];
 
 function sample() {
   const dir = mkdtempSync(join(tmpdir(), 'ores-evidence-'));
@@ -21,22 +21,32 @@ function sample() {
       manifest.push(file);
     }
   }
+  mkdirSync(join(dir,'tests/guest'),{recursive:true});
+  for (const name of ['agent_pipeline', 'direct_agent_hop']) {
+    writeFileSync(join(dir,'tests/guest/'+name+'.ores'), 'fnc main():void {}');
+    manifest.push('tests/guest/'+name+'.ores');
+    writeFileSync(join(dir,'tests/guest/'+name+'.stdout'),'passed');
+  }
   manifest.sort();
-  writeFileSync(join(dir,'tests/guest/agent_pipeline.ores'), 'fnc main():void {}');
-  manifest.push('tests/guest/agent_pipeline.ores');
-  manifest.sort();
-  writeFileSync(join(dir,'tests/guest/agent_pipeline.stdout'),'passed');
+  mkdirSync(join(dir,'tests/guest/negative'),{recursive:true});
+  const negPath=join(dir,'tests/guest/negative/wrong_actor_mail_type.ores');
+  writeFileSync(negPath, 'fnc main():void { error(); }');
   const outcomes = manifest.map(file => ({
     file, source_sha256:digest(readFileSync(join(dir,file))),
     passed:true, exit_code:0, signal:null
   }));
   const check={compiler_source_head:SHA,checked:manifest.length,
-    required:manifest.length,passed:true,manifest,outcomes};
-  const guest={test:'agent_pipeline',compiler_source_head:SHA,
-    compiler_worktree_clean:true,passed:true,executed:true,
-    exit_code:0,signal:null,stdout_exact:true,
-    fixture_sha256:digest(readFileSync(join(dir,'tests/guest/agent_pipeline.ores'))),
-    oracle_sha256:digest(readFileSync(join(dir,'tests/guest/agent_pipeline.stdout')))};
+    required:manifest.length,actor_count:20,passed:true,manifest,outcomes,
+    negative:{file:'tests/guest/negative/wrong_actor_mail_type.ores',
+      source_sha256:digest(readFileSync(negPath)),exit_code:1,signal:null,
+      expected_type_error:'ActorRef.send mailbox value',
+      passed:true,diagnostic:'ActorRef.send mailbox value'}};
+  const guest={compiler_source_head:SHA,cases_required:2,cases_executed:2,
+    passed:true,results:['agent_pipeline','direct_agent_hop'].map(name=>({
+      name,passed:true,exit_code:0,signal:null,error:null,stdout_exact:true,
+      source_sha256:digest(readFileSync(join(dir,'tests/guest/'+name+'.ores'))),
+      oracle_sha256:digest(readFileSync(join(dir,'tests/guest/'+name+'.stdout')))
+    }))};
   return {dir,check,guest,cleanup:()=>rmSync(dir,{recursive:true,force:true})};
 }
 const clone=x=>structuredClone(x);
@@ -47,7 +57,7 @@ test('accepts exact source hashes, complete compiler outcomes and guest receipt'
     const out=verifyNativeCheck(s.check,s.dir,SHA);
     assert.equal(out.checked_actors,20);
     assert.equal(out.checked_guest_sources,2);
-    assert.equal(verifyNativeGuest(s.guest,s.dir,SHA).guest_scenarios,1);
+    assert.equal(verifyNativeGuest(s.guest,s.dir,SHA).guest_scenarios,2);
   } finally {s.cleanup()}
 });
 test('rejects missing duplicate and forged native receipt lines',()=>{
@@ -67,7 +77,10 @@ test('rejects failed, missing, or altered compiler outcomes',()=>{
       x=>{x.outcomes.pop();},
       x=>{x.manifest.reverse();},
       x=>{x.outcomes[0].source_sha256='b'.repeat(64);},
-      x=>{x.compiler_source_head='b'.repeat(40);}
+      x=>{x.compiler_source_head='b'.repeat(40);},
+      x=>{x.negative.passed=false;},
+      x=>{x.negative.diagnostic='syntax error';},
+      x=>{x.negative.exit_code=0;}
     ]){
       const bad=clone(s.check);mutation(bad);
       assert.throws(()=>verifyNativeCheck(bad,s.dir,SHA));
@@ -80,9 +93,10 @@ test('rejects guest reports without actual exact execution',()=>{
   const s=sample();
   try{
     for(const mutation of [
-      x=>{x.executed=false;},x=>{x.stdout_exact=false;},
-      x=>{x.exit_code=1;},x=>{x.compiler_source_head='b'.repeat(40);},
-      x=>{x.passed=false;},x=>{x.oracle_sha256='b'.repeat(64);}
+      x=>{x.results[0].passed=false;},x=>{x.results[1].stdout_exact=false;},
+      x=>{x.results[0].exit_code=1;},x=>{x.compiler_source_head='b'.repeat(40);},
+      x=>{x.passed=false;},x=>{x.results[1].oracle_sha256='b'.repeat(64);},
+      x=>{x.results.pop();},x=>{x.results[0].name='wrong_case';}
     ]){
       const bad=clone(s.guest);mutation(bad);
       assert.throws(()=>verifyNativeGuest(bad,s.dir,SHA));

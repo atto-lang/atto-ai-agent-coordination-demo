@@ -1,0 +1,13 @@
+// Intentional NEGATIVE Java typecheck fixture; never execute this program.
+// A String mailbox cannot accept an int. Require a targeted type diagnostic.
+define actor StringAgent as
+  receive(ActorMail<String> mail): void {
+    return;
+  }
+end
+
+pub routine main(): void {
+  val worker = spawn StringAgent();
+  worker.send(42);
+  return;
+}

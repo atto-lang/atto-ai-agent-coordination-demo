@@ -6,7 +6,7 @@ import { join, resolve, relative, isAbsolute } from 'node:path';
 
 const SHA40 = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
-const dirs = new Map([['src', 8], ['src/memory', 9], ['src/runtime', 3], ['tests/guest', 1]]);
+const dirs = new Map([['src', 8], ['src/memory', 9], ['src/runtime', 3], ['tests/guest', 2]]);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 export function receiptFromOutput(stdout, prefix) {
@@ -71,32 +71,57 @@ export function verifyNativeCheck(report, demoPath, expectedCompilerSHA) {
   }
   const actorCount = expectedFiles.filter(x => x.startsWith('src/')).length;
   const guestCount = expectedFiles.filter(x => x.startsWith('tests/guest/')).length;
-  if (actorCount < 20 || guestCount < 1)
+  const expectedGuests = ['tests/guest/agent_pipeline.ores', 'tests/guest/direct_agent_hop.ores'];
+  if (actorCount < 20 || guestCount !== 2 ||
+      !expectedGuests.every(file => expectedFiles.includes(file)) ||
+      report.actor_count !== actorCount)
     throw Error('insufficient native actor or guest coverage');
+  const neg = report.negative;
+  const negativeFile = 'tests/guest/negative/wrong_actor_mail_type.ores';
+  if (!neg || neg.file !== negativeFile || neg.passed !== true ||
+      !Number.isInteger(neg.exit_code) || neg.exit_code === 0 ||
+      neg.signal !== null ||
+      neg.expected_type_error !== 'ActorRef.send mailbox value' ||
+      typeof neg.diagnostic !== 'string' ||
+      !neg.diagnostic.includes(neg.expected_type_error) ||
+      !SHA256.test(neg.source_sha256))
+    throw Error('missing targeted negative mailbox type verdict');
+  const negativePath = join(demo, negativeFile);
+  if (!lstatSync(negativePath).isFile() ||
+      sha256(readFileSync(negativePath)) !== neg.source_sha256)
+    throw Error('negative type-check source identity mismatch');
   return { checked_actors: actorCount, checked_guest_sources: guestCount,
+    positive_native_checks: report.checked, negative_native_checks: 1,
     manifest_sha256: sha256(Buffer.from(expectedFiles.join('\n') + '\n')) };
 }
 
 export function verifyNativeGuest(report, demoPath, expectedCompilerSHA) {
-  if (!SHA40.test(expectedCompilerSHA) || report?.test !== 'agent_pipeline' ||
-      report.compiler_source_head !== expectedCompilerSHA ||
-      report.compiler_worktree_clean !== true ||
-      report.passed !== true || report.executed !== true ||
-      report.exit_code !== 0 || report.signal !== null ||
-      report.stdout_exact !== true ||
-      !SHA256.test(report.fixture_sha256) || !SHA256.test(report.oracle_sha256))
-    throw Error('native guest receipt mismatch');
+  if (!SHA40.test(expectedCompilerSHA) ||
+      report?.compiler_source_head !== expectedCompilerSHA ||
+      report.passed !== true || report.cases_required !== 2 ||
+      report.cases_executed !== 2 || !Array.isArray(report.results) ||
+      report.results.length !== 2)
+    throw Error('native guest summary mismatch');
   const demo = realpathSync(resolve(demoPath));
-  const sources = [
-    ['tests/guest/agent_pipeline.ores', report.fixture_sha256],
-    ['tests/guest/agent_pipeline.stdout', report.oracle_sha256]
-  ];
-  for (const [file, digest] of sources) {
-    const target = join(demo, file);
-    if (!lstatSync(target).isFile() || sha256(readFileSync(target)) !== digest)
-      throw Error('guest source/oracle drift: ' + file);
+  const names = ['agent_pipeline', 'direct_agent_hop'];
+  const hashes = [];
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    const entry = report.results[i];
+    if (!entry || entry.name !== name || entry.passed !== true ||
+        entry.exit_code !== 0 || entry.signal !== null ||
+        entry.error !== null || entry.stdout_exact !== true ||
+        !SHA256.test(entry.source_sha256) || !SHA256.test(entry.oracle_sha256))
+      throw Error('native guest execution receipt mismatch: ' + name);
+    for (const [extension, expected] of [
+      ['.ores', entry.source_sha256], ['.stdout', entry.oracle_sha256]
+    ]) {
+      const path = join(demo, 'tests/guest/' + name + extension);
+      if (!lstatSync(path).isFile() || sha256(readFileSync(path)) !== expected)
+        throw Error('native guest source or oracle mismatch: ' + name);
+    }
+    hashes.push({name, source_sha256: entry.source_sha256,
+      oracle_sha256: entry.oracle_sha256});
   }
-  return { guest_scenarios: 1,
-    guest_fixture_sha256: report.fixture_sha256,
-    guest_oracle_sha256: report.oracle_sha256 };
+  return { guest_scenarios: names.length, verified_guest_hashes: hashes };
 }
