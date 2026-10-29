@@ -42,7 +42,7 @@ function apply(s, e) {
       s.intents[e.key].outcome = 'uncertain'; break;
     case 'CANCEL':
       assert(s.status === 'planned' || s.status === 'running', 'bad cancellation');
-      assert(Object.values(s.intents).every(x => x.outcome !== 'pending'), 'pending effect');
+      assert(Object.values(s.intents).every(x => x.outcome === 'committed'), 'unresolved effect');
       s.status = 'cancelled'; break;
     case 'FINISH':
       assert(s.status === 'running', 'bad completion');
