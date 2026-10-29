@@ -5,8 +5,8 @@ The prototype assumes the caller has already verified the identity of a remote w
 | Actor | Enforced by current source | Not yet enforced |
 | --- | --- | --- |
 | KnowledgeGraph | unique IDs, endpoint existence, 4096 nodes and 16384 edges | cross-shard snapshots, graph acyclicity, durable writes |
-| KnowledgeCache | same-version reads, expiry, 1024 items | LRU eviction, trusted clocks, durability |
-| DecisionTree | exact branch-table version, max 256 branches | targets exist, no cycles, policy evaluation |
+| KnowledgeCache | single-graph binding, strictly increasing revisions, expiry, 1024 reusable slots | LRU eviction, trusted clocks, durability |
+| DecisionTree | closed predeclared targets, acyclic insertion, exact revision, max 256 nodes total | policy evaluation, proof of compiler/runtime behavior |
 | DecisionGate | zero-step checks deny, exact revision/epoch, independent approval flag, invalidation | caller/approval authentication and provenance verification |
 | EvidenceLedger | unique receipt ID, positive step count, bounded append | authenticated evidence, actual CI result, tamper-proof append log |
 | AgentCoordinator | max 64 active, unique task key, single settlement | safe historical-ticket recycling, durable queues, worker authentication |
@@ -24,4 +24,4 @@ The prototype assumes the caller has already verified the identity of a remote w
 - Require Native Oreslang compilation and executed tests on Java/Graal and at least one additional backend before calling it portable.
 
 ## Validation language
-A passing JS source-contract check only proves designated structural properties exist as text. It is not a parser, type-checker, behavioral unit test, CI runner-admission result, or application benchmark. Report these independently.
+The JS source-contract checks only prove designated structural properties exist as text. The six separately executable JS reference-model tests pin intended graph/cache transitions, **not** Oreslang actor execution. Neither suite is a native parser/type-checker test, runtime verification, CI runner-admission result, or application benchmark. Zero-step CI is not a failed source test. Report these independently.
