@@ -34,5 +34,5 @@ for (const script of scripts) {
   }
 }
 console.log('NATIVE_ACCEPTANCE_RESULT ' + JSON.stringify({demo_head:head,
-  demo_tree:tree, checked_actors:8, native_checks:10, guest_scenarios:2, passed:true,
-  scope:'Java checks and two guest stdout oracles; no crash recovery'}));
+  demo_tree:tree, checked_actors:8, positive_native_checks:10, negative_native_checks:1, guest_scenarios:2, passed:true,
+  scope:'Java positive and negative checks plus two guest stdout oracles; no crash recovery'}));
