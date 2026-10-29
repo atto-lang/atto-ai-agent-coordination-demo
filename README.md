@@ -25,6 +25,31 @@ A code-indexer ingests symbols, files and dependency edges into a `KnowledgeGrap
 
 See [architecture](docs/ARCHITECTURE.md), [invariants and trust boundaries](docs/INVARIANTS.md), and [example scenario](examples/repository-agent-flow.md).
 
+
+## P0: executable actor-mail guest fixture (pending native compiler)
+
+`tests/guest/agent_pipeline.ores` models **one cache actor and three workers**
+(`ResearchAgent`, `AnalysisAgent`, `ExecutionAgent`). Main mediates typed
+`ActorMail<String>` messages and verifies that the cache remains live for two
+queries; `tests/guest/agent_pipeline.stdout` pins the exact oracle.
+
+With a previously **built, trusted, clean** Java reference compiler checkout,
+run:
+
+```bash
+export ORESLANG_COMPILER_ROOT=/absolute/path/to/oreslang-source.java
+export ORESLANG_COMPILER_SHA="$(git -C "$ORESLANG_COMPILER_ROOT" rev-parse HEAD)"
+node scripts/run-native-guest.mjs
+```
+
+See [P0 native acceptance and compiler build steps](docs/P0_NATIVE_ACCEPTANCE.md).
+The runner rejects missing/mismatched source revisions, missing build artifacts,
+nonzero exits, timeouts and stdout drift. **Nothing in the existing Node.js
+model or source-contract tests establishes native Oreslang compilation.** The
+`executed` message is deliberately inert; it does not authorize or invoke tools.
+Direct actor-to-actor forwarding, durable recovery, sandboxing, JDK25 exact-head
+evidence and five-backend parity remain unverified.
+
 ## Validation
 
 ```sh
