@@ -20,6 +20,27 @@ try {
   dirty = execFileSync('git',['-C',demo,'status','--porcelain','--untracked-files=no'],opt).trim();
 } catch { fail('demo Git checkout unavailable'); }
 if (head !== expected || dirty) fail('demo revision mismatch or dirty tracked source');
+function requireEvidence(script, output) {
+  const marker = script === 'check-native-actors.mjs'
+    ? 'NATIVE_CHECK_RESULT ' : 'NATIVE_GUEST_RESULT ';
+  const matches = output.split('\\n').filter(line => line.startsWith(marker));
+  if (matches.length !== 1) fail('missing or ambiguous evidence marker: ' + script);
+  let record;
+  try { record = JSON.parse(matches[0].slice(marker.length)); }
+  catch { fail('invalid JSON evidence: ' + script); }
+  if (record.passed !== true || record.compiler_source_head !== process.env.ORESLANG_COMPILER_SHA)
+    fail('unverified compiler identity or failed result: ' + script);
+  if (script === 'check-native-actors.mjs') {
+    if (record.checked !== 10 || record.required !== 10 ||
+        !Array.isArray(record.outcomes) || record.outcomes.length !== 10 ||
+        !record.outcomes.every(x => x.passed === true) ||
+        record.negative?.passed !== true)
+      fail('incomplete positive or negative compiler checks');
+  } else if (record.cases_required !== 2 || record.cases_executed !== 2 ||
+      !Array.isArray(record.results) || record.results.length !== 2 ||
+      !record.results.every(x => x.passed === true && x.stdout_exact === true))
+      fail('incomplete actual guest execution');
+}
 for (const script of scripts) {
   const file = fileURLToPath(new URL(script, import.meta.url));
   const result = spawnSync(process.execPath, [file], {
@@ -32,6 +53,7 @@ for (const script of scripts) {
     console.error('NATIVE_ACCEPTANCE_UNVERIFIED gate=' + script);
     process.exit(1);
   }
+  requireEvidence(script, result.stdout || '');
 }
 console.log('NATIVE_ACCEPTANCE_RESULT ' + JSON.stringify({demo_head:head,
   demo_tree:tree, checked_actors:8, positive_native_checks:10, negative_native_checks:1, guest_scenarios:2, passed:true,
