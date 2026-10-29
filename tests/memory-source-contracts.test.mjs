@@ -86,9 +86,9 @@ test('index and recall are scoped and capped', () => {
 });
 test('context manifest rejects raw excerpts, untrusted token counts and limits to 24 references', () => {
   const text = source('context_assembly');
-  assert.doesNotMatch(text, /\\bpub\\s+add\\s*\\(/, 'removed legacy raw context admission');
-  assert.doesNotMatch(text, /\\bpub\\s+remaining_budget\\s*\\(/, 'removed fake token budget');
-  assert.doesNotMatch(text, /\\b(?:tokens|token_budget|estimated_tokens):\\s*int\\s*=/, 'no token estimate state');
+  assert.doesNotMatch(text, /\bpub\s+add\s*\(/, 'removed legacy raw context admission');
+  assert.doesNotMatch(text, /\bpub\s+remaining_budget\s*\(/, 'removed fake token budget');
+  assert.doesNotMatch(text, /\b(?:tokens|token_budget|estimated_tokens):\s*int\s*=/, 'no token estimate state');
   mustContain('context_assembly', [
     's.memory_ids.size >= 24',
     'for (const existing of s.memory_ids)',
@@ -108,8 +108,8 @@ test('manifest read and write gates are scope bound and no excerpt is stored', (
     'exact_revision != s.revision', 'memory_id == ""',
     'evidence_ref == ""', 's.memory_ids.size >= 24'
   ]) assert.ok(stage.includes(gate), 'missing stage_reference gate ' + gate);
-  assert.doesNotMatch(text, /\\bexcerpts:\\s*Array</, 'no raw excerpt state');
-  assert.doesNotMatch(text, /\\bs\\.excerpts\\b/, 'no raw excerpt state access');
+  assert.doesNotMatch(text, /\bexcerpts:\s*Array</, 'no raw excerpt state');
+  assert.doesNotMatch(text, /\bs\.excerpts\b/, 'no raw excerpt state access');
   const begin = text.slice(text.indexOf('pub begin('), start);
   assert.ok(begin.includes('s.started || task == "" || exact_revision == ""'));
   for (const read of ['selected_ids', 'selected_evidence', 'current_count']) {
