@@ -22,7 +22,17 @@ an immutable value under that key. A second request, including one with a
 new signed evidence receipt, must not acquire a new claim for the same logical
 dispatch. A mismatched context hash must be refused, not silently overwritten.
 The host claim must be atomic and durable (unique constraint / compare-and-set),
-and failures or uncertain results must fail closed.
+and failures or uncertain results must fail closed. The model-service request now
+receives the host-selected dispatch ID and serialized context SHA-256, so a
+trusted provider can enforce a stable idempotency key and detect a changed
+payload. This is a request binding, **not** evidence of provider-side enforcement.
+
+After the durable claim succeeds, the host rechecks both current revision
+and policy authorization before submission. A post-claim revocation consumes
+the claim and must not trigger automatic retry even if permission returns.
+There is still a TOCTOU interval between that last check and network
+submission: only policy verification inside the trusted model-service
+dispatch boundary can close that interval authoritatively.
 
 The test uses the existing **single-host local POSIX file claim** reference.
 That does not prove multi-host linearizability, atomic authorization+submit,
