@@ -46,11 +46,13 @@ export function canonical_evidence_payload(payload) {
 // determines authenticity. This adapter consumes receipt IDs in one process;
 // across restarts, a durable shared replay ledger is REQUIRED.
 export function create_signed_evidence_verifier({ trustedReceipts, keys, issuer,
-    now = Date.now, max_receipts = 4096 }) {
+    now = Date.now, max_receipts = 4096, claimReceipt = null, requireDurable = false }) {
   if (typeof trustedReceipts !== 'function' || typeof now !== 'function' ||
       typeof issuer !== 'string' || !ID.test(issuer) ||
       !Number.isSafeInteger(max_receipts) || max_receipts < 1 || max_receipts > 4096 ||
-      !keys || Object.getPrototypeOf(keys) !== Object.prototype) {
+      !keys || Object.getPrototypeOf(keys) !== Object.prototype ||
+      (claimReceipt !== null && typeof claimReceipt !== 'function') ||
+      (requireDurable && typeof claimReceipt !== 'function')) {
     throw new TypeError('trusted receipt source, issuer, and key registry required');
   }
   const keyIds = Object.keys(keys);
@@ -99,6 +101,9 @@ export function create_signed_evidence_verifier({ trustedReceipts, keys, issuer,
       // Single-process replay rejection is atomic after await; do not cache
       // any successful claim before signature and scope validation.
       if (consumed.has(payload.receipt_id) || consumed.size >= max_receipts) return null;
+      // A host-owned durable claim must be atomic, linearizable, and fail closed.
+      // The bundled local-file adapter is SINGLE-HOST only.
+      if (claimReceipt && await claimReceipt(payload.issuer, payload.receipt_id) !== true) return null;
       consumed.add(payload.receipt_id);
       return Object.freeze({ authorized: true, ...scope });
     } catch { return null; }
