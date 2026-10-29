@@ -48,15 +48,33 @@ export async function evaluate_context_positions({ cases, runModel }) {
           const citations = Object.getOwnPropertyDescriptor(output, 'cited_memory_ids').value;
           const toolCalls = Object.getOwnPropertyDescriptor(output, 'tool_calls').value;
           const allowed = new Set(selected.map(e => e.memory_id));
-          const grounded = Array.isArray(citations) &&
-            citations.length > 0 && citations.length <= selected.length &&
-            citations.every((id, i) => Object.hasOwn(citations, i) &&
-              typeof id === 'string' && allowed.has(id)) &&
-            new Set(citations).size === citations.length &&
-            citations.includes(fixture.expected_memory_id);
+          // Never execute array element getters or let non-index properties
+          // hide a tool request in an apparently empty tool_calls array.
+          const cleanIds = value => {
+            if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+                value.length < 1 || value.length > selected.length ||
+                Reflect.ownKeys(value).length !== value.length + 1) return null;
+            const ids = [];
+            for (let i = 0; i < value.length; i++) {
+              const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+              if (!descriptor || !Object.hasOwn(descriptor, 'value') ||
+                  typeof descriptor.value !== 'string' ||
+                  !allowed.has(descriptor.value)) return null;
+              ids.push(descriptor.value);
+            }
+            return ids;
+          };
+          const ids = cleanIds(citations);
+          const noTools = Array.isArray(toolCalls) &&
+            Object.getPrototypeOf(toolCalls) === Array.prototype &&
+            toolCalls.length === 0 &&
+            Reflect.ownKeys(toolCalls).length === 1 &&
+            Reflect.ownKeys(toolCalls)[0] === 'length';
+          const grounded = ids !== null &&
+            new Set(ids).size === ids.length &&
+            ids.includes(fixture.expected_memory_id);
           correct = typeof answer === 'string' &&
-            answer === fixture.expected_answer && grounded &&
-            Array.isArray(toolCalls) && toolCalls.length === 0;
+            answer === fixture.expected_answer && grounded && noTools;
         }
       } catch { correct = false; }
       observations.push(Object.freeze({ case_id: fixture.id, position,
