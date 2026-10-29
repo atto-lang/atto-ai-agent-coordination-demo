@@ -19,7 +19,7 @@ MemoryIndexActor             exact subject/repo/branch/revision -> memory IDs
       |
 MemoryRetrievalActor         capability-published read model, withdrawal
       |
-ContextAssemblyActor         token-estimate-bounded context excerpts with IDs
+ContextAssemblyActor         untrusted, bounded ID/reference manifest ONLY (no excerpts)
       |
 Coding agent                  reads context as data, never delegated authority
 
@@ -35,7 +35,7 @@ MemoryCheckpointManifestActor monotonic pointers to external durable checkpoints
 4. The verification adapter checks evidence authenticity and exact repository/branch/revision before calling `resolve` on the verification actor. It must authenticate the caller out-of-band: a receipt ID is **not** a cryptographic proof. State: pending (0), verified (1), rejected (2), superseded (3).
 5. An authorized indexer publishes *only verified, not superseded* facts to an exact-match index and read model. On later supersession, it must withdraw obsolete read-model entries. These cross-actor updates are **not atomic** in v1.
 6. A retrieval caller checks `MemoryInvalidationActor.is_current(repo, branch, revision, generation)`, then asks `MemoryIndexActor.find` and `MemoryRetrievalActor.recall_ids` with the same exact scope. Before showing/acting on results, it rechecks the verification state, the branch generation and relevant authorization.
-7. Context assembly collects up to 24 excerpts and tracks caller-reported token estimates within a 16,384-unit budget. It returns *separate* memory IDs, excerpts and evidence references, not a trusted instruction prompt. A real tokenizer must enforce the model's actual context limit.
+7. The native context actor now quarantines up to 24 **unverified reference pairs only**. The legacy caller-token-estimate `add()` API is removed. `selected_excerpts()` always returns `Err` and raw text never enters this actor. The separately trusted host must independently resolve refs, check an authenticated signature with a dedicated context-data audience, enforce actual UTF-8/excerpt and model tokenizer quotas, revalidate branch head and tool capabilities, and serialize the data-only context at model dispatch. This repo does NOT wire a trusted verifier or real tokenizer to the native runtime; therefore production model ingress remains disabled. Existing consumers of the removed native API require migration.
 8. Before an external write (merge, deploy, modify source), the decision gate independently checks current revision, valid CI execution, authenticated approval and side-effect authorization. Recheck HEAD generation at the action boundary.
 
 ## Storage and lifecycle
@@ -47,7 +47,7 @@ All arrays have hard entry caps. Exhaustion currently rejects work instead of ev
 ## Safety and provenance
 
 - Model output and retrieved source text are untrusted data, not instructions or authority.
-- Source references, digests, verifier receipts and token estimates are **caller-supplied claims** until independently validated by an authenticated boundary.
+- Source references, digests, verifier receipts and token estimates are **caller-supplied claims** until independently validated by an authenticated boundary. A sealed ContextAssemblyActor manifest is NOT trusted evidence and must not be passed directly to the model as instructions, text, or execution authority.
 - Exact revision matching must distinguish Git branch tip from historical revisions; old facts may be valid for their original tree but not current HEAD.
 - When an authorized actor marks a fact superseded/rejected, retrieval and caches must be invalidated; this demo does not enforce synchronous cross-actor revocation.
 - CI evidence must bind source tree, run attempt, executed steps, actual results and independent approvals; zero-step jobs never count as compiler/app execution.
@@ -59,7 +59,7 @@ All arrays have hard entry caps. Exhaustion currently rejects work instead of ev
 | --- | --- | --- |
 | Source contract | Dependency-free Node static checks | Executed runner steps, source test logs |
 | Syntax/type/ownership | Not verified | Compile against a pinned Oreslang Java/Graal compiler |
-| Behavior | No native guest test executed | Duplicate event, stale HEAD CAS, rejected fact, supersession, withdrawn read, context budget, replay rejection |
+| Behavior | No native guest test executed | Duplicate event, stale HEAD CAS, rejected fact, supersession, withdrawn read, quarantined context references, denial of legacy excerpt publication, replay rejection |
 | Durability | Local manifest reference only | WAL, transactional outbox, snapshots, crash/restart and corruption tests |
 | Distribution | Single-actor local state | Authenticated transport, supervisor, activation, backpressure and cancellation |
 | Parity | Not verified | Java/Graal, LLVM and .NET/Wasm conformance fixtures |
