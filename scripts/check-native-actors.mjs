@@ -2,7 +2,7 @@
 // Compile-only gate for every userland actor, two native guests and a negative mailbox fixture.
 // This executes the Java OresMain --check compiler, NOT guest actor behavior.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, lstatSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,8 @@ function listActors(base, dir, minimum) {
 // Fail closed if future actor directories introduce source that the pinned
 // native gate would silently omit. No symlinked actor paths are accepted.
 function assertCompleteActorCoverage(base, listed) {
+  if (!lstatSync(join(base, 'src')).isDirectory())
+    fail('actor source root must be a regular directory');
   const allowed = new Set(listed);
   const stack = ['src'];
   while (stack.length) {
