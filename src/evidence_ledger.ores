@@ -30,8 +30,8 @@ define isolated actor EvidenceLedgerActor as
   }
 
   pub has_success(String subject, String revision,
-                      String digest): bool with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+                      String digest): bool with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.subjects) {
         if existing == subject && s.revisions[i] == revision &&

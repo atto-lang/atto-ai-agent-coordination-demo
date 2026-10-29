@@ -68,8 +68,8 @@ define isolated actor KnowledgeGraphActor as
     });
   }
 
-  pub neighbors(String source, String kind): Array<String> with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+  pub neighbors(String source, String kind): Array<String> with state.read {
+    return self.handle_state(|s| -> {
       let mut Array<String> result = new Array<String>();
       let int i = 0;
       for (const from of s.edge_from) {

@@ -25,8 +25,8 @@ define isolated actor AgentRegistryActor as
   }
 
   pub supports(String id, int incarnation,
-                   String capability): bool with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+                   String capability): bool with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.identities) {
         if existing == id && s.incarnations[i] == incarnation &&

@@ -51,8 +51,8 @@ define isolated actor MemoryIngestionActor as
     });
   }
 
-  pub pending(int ticket, String event_id): bool with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+  pub pending(int ticket, String event_id): bool with state.read {
+    return self.handle_state(|s| -> {
       if ticket <= 0 || ticket > s.event_ids.size; then return false; fi
       val int index = ticket - 1;
       return s.event_ids[index] == event_id && !s.acknowledged[index];

@@ -55,8 +55,8 @@ define isolated actor MemoryInvalidationActor as
   }
 
   pub is_current(String repo, String branch,
-                     String revision, int generation): bool with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+                     String revision, int generation): bool with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.repositories) {
         if existing == repo && s.branches[i] == branch; then

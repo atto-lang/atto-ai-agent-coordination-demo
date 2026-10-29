@@ -69,8 +69,8 @@ define isolated actor ExecutionGraphActor as
 
   // This read is a candidate list only. A scheduler must re-check start()
   // and authenticate worker identity before dispatching any action.
-  pub ready(int expected_revision): Result<Array<String>, String> with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+  pub ready(int expected_revision): Result<Array<String>, String> with state.read {
+    return self.handle_state(|s| -> {
       if !s.sealed || expected_revision != s.revision; then
         return Err("stale execution graph");
       fi
@@ -101,8 +101,8 @@ define isolated actor ExecutionGraphActor as
     });
   }
 
-  prerequisites_done(String node): bool with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+  prerequisites_done(String node): bool with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const dependent of s.dependents) {
         if dependent == node; then

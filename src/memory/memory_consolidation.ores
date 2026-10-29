@@ -36,8 +36,8 @@ define isolated actor MemoryConsolidationActor as
   }
 
   pub resolve(String id, String repo, String branch,
-                  String revision): Result<String, String> with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+                  String revision): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
       if id == "" || repo == "" || branch == "" || revision == ""; then
         return Err("invalid memory scope");
       fi

@@ -33,8 +33,8 @@ define isolated actor MemoryIndexActor as
   // Returned IDs are candidates. The retrieval actor MUST re-check live
   // verification/supersession and scope before using any result.
   pub find(String subject, String repo, String branch,
-               String revision, int limit): Result<Array<String>, String> with state.read, state.write {
-    return self.handle_state(critical write |s| -> {
+               String revision, int limit): Result<Array<String>, String> with state.read {
+    return self.handle_state(|s| -> {
       if subject == "" || repo == "" || branch == "" || revision == "" ||
          limit < 1 || limit > 32; then return Err("invalid lookup"); fi
       let mut Array<String> results = new Array<String>();
