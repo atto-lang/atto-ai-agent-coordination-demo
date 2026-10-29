@@ -9,5 +9,5 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 g++ -std=c++17 -Wall -Wextra -Werror -O2 -g -fno-omit-frame-pointer \
   -I native native/workflow_sqlite.cpp tests/native_sqlite_test.cpp \
-  $(pkg-config --cflags --libs sqlite3) -pthread -o timeout --kill-after=5s 30s "$tmp/native-workflow-test"
-"$tmp/native-workflow-test"
+  $(pkg-config --cflags --libs sqlite3) -pthread -o "$tmp/native-workflow-test"
+timeout --kill-after=5s 30s "$tmp/native-workflow-test"
