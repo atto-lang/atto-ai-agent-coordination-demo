@@ -10,7 +10,7 @@ const modules = [
   ['memory_invalidation', 'MemoryInvalidationActor', ['register','advance','is_current']],
   ['memory_index', 'MemoryIndexActor', ['link','find']],
   ['memory_retrieval', 'MemoryRetrievalActor', ['publish','withdraw','recall_ids','read']],
-  ['context_assembly', 'ContextAssemblyActor', ['begin','add','seal','selected_ids','selected_excerpts','selected_evidence']],
+  ['context_assembly', 'ContextAssemblyActor', ['begin','stage_reference','seal','selected_ids','selected_excerpts','selected_evidence','current_count']],
   ['memory_consolidation', 'MemoryConsolidationActor', ['link_duplicate','resolve']],
   ['memory_checkpoint_manifest', 'MemoryCheckpointManifestActor', ['record','locate']]
 ];
@@ -84,15 +84,41 @@ test('index and recall are scoped and capped', () => {
     's.evidence_refs[i] != evidence_ref'
   ]);
 });
-test('context packaging enforces fixed token estimate and seals output', () => {
+test('context manifest rejects raw excerpts, untrusted token counts and limits to 24 references', () => {
+  const text = source('context_assembly');
+  assert.doesNotMatch(text, /\\bpub\\s+add\\s*\\(/, 'removed legacy raw context admission');
+  assert.doesNotMatch(text, /\\bpub\\s+remaining_budget\\s*\\(/, 'removed fake token budget');
+  assert.doesNotMatch(text, /\\b(?:tokens|token_budget|estimated_tokens):\\s*int\\s*=/, 'no token estimate state');
   mustContain('context_assembly', [
-    'token_budget > 16384',
     's.memory_ids.size >= 24',
-    'estimated_tokens > s.remaining',
-    's.remaining = s.remaining - estimated_tokens',
+    'for (const existing of s.memory_ids)',
+    'if existing == memory_id; then return false; fi',
     's.sealed = true',
-    'if !s.sealed'
+    'return Err("native excerpt publication disabled: use authenticated model ingress");'
   ]);
+});
+test('manifest read and write gates are scope bound and no excerpt is stored', () => {
+  const text = source('context_assembly');
+  const start = text.indexOf('pub stage_reference(');
+  const stop = text.indexOf('pub seal(', start);
+  const stage = text.slice(start, stop);
+  assert.ok(start >= 0 && stop > start);
+  for (const gate of [
+    '!s.started', 's.sealed', 'task != s.task_id',
+    'exact_revision != s.revision', 'memory_id == ""',
+    'evidence_ref == ""', 's.memory_ids.size >= 24'
+  ]) assert.ok(stage.includes(gate), 'missing stage_reference gate ' + gate);
+  assert.doesNotMatch(text, /\\bexcerpts:\\s*Array</, 'no raw excerpt state');
+  assert.doesNotMatch(text, /\\bs\\.excerpts\\b/, 'no raw excerpt state access');
+  const begin = text.slice(text.indexOf('pub begin('), start);
+  assert.ok(begin.includes('s.started || task == "" || exact_revision == ""'));
+  for (const read of ['selected_ids', 'selected_evidence', 'current_count']) {
+    const start = text.indexOf('pub ' + read + '(');
+    assert.ok(start > 0);
+    const body = text.slice(start, text.indexOf('\n  }', start));
+    assert.ok(body.includes('task != s.task_id'));
+    assert.ok(body.includes('exact_revision != s.revision'));
+  }
 });
 test('consolidation prevents direct alias cycles/chains', () => {
   mustContain('memory_consolidation', [
