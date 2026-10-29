@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Compile-only gate for every userland actor, two native guests and a negative mailbox fixture.
+// Compile-only gate for every userland actor, three native guests and a negative mailbox fixture.
 // This executes the Java OresMain --check compiler, NOT guest actor behavior.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
@@ -8,7 +8,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const actorDirs = { 'src': 8, 'src/memory': 9, 'src/runtime': 3 };
-const requiredGuestPaths = ['tests/guest/agent_pipeline.ores', 'tests/guest/direct_agent_hop.ores'];
+const requiredGuestPaths = ['tests/guest/agent_pipeline.ores', 'tests/guest/direct_agent_hop.ores', 'tests/guest/step_agent_flow.ores'];
 const negativePath = 'tests/guest/negative/wrong_actor_mail_type.ores';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 function listActors(base, dir, minimum) {
@@ -89,7 +89,7 @@ if (positive_ok) {
 }
 const passed = positive_ok && Boolean(negative && negative.passed);
 console.log('NATIVE_CHECK_RESULT ' + JSON.stringify({compiler_source_head:head,
-  scope:'OresMain --check; all actor and two guest checks plus one negative mailbox typing check; NOT guest execution',
+  scope:'OresMain --check; all actor and three guest checks plus one negative mailbox typing check; NOT guest execution',
   checked:outcomes.length, required:files.length, manifest:files,
   actor_count:actorPaths.length, negative, passed, outcomes}));
 if (!passed) fail('native compiler positive or negative check failed; see diagnostics',1);
