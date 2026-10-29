@@ -35,4 +35,5 @@ test('denies effect execution, tenant isolation violations and invalid input',()
  assert.equal((await post(url,request('tool.execute',{cmd:'rm -rf /'}))).status,400);
  assert.equal((await post(url,request('knowledge.get_entity',{id:'x'},{tenant_id:'other'}))).status,403);
  assert.equal((await post(url,request('knowledge.get_entity',{id:'a'.repeat(256)}))).status,422);
+ assert.equal((await post(url,request('knowledge.get_entity',{id:'__proto__'}))).json.value,null);
 }));
