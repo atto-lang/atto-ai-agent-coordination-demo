@@ -1,0 +1,241 @@
+// Supervision state contract, NOT a durable actor implementation.
+// A TRUSTED adapter must restore a consistent checkpoint/WAL and acquire a
+// storage-enforced fencing epoch BEFORE creating this actor. All public
+// string arguments are protocol data, NOT authenticated authority.
+// Child states: 0 planned, 1 running, 2 verified complete, 3 in-doubt,
+// 4 proved failed, 5 cancelled before dispatch.
+// Run phases: 0 new, 1 configuring, 2 running, 3 failed, 4 complete, 5 cancelled.
+define isolated actor WorkflowSupervisorActor as
+  state {
+    tenant_id: String = "";
+    run_id: String = "";
+    source_revision: String = "";
+    generation: int = 0;
+    activation_epoch: int = 0;
+    version: int = 0;
+    phase: int = 0;
+    child_ids: Array<String> = new Array<String>();
+    child_states: Array<int> = new Array<int>();
+    receipt_ids: Array<String> = new Array<String>();
+    unresolved_count: int = 0;
+  }
+
+  pub configure(String tenant, String run, String revision,
+                int verified_generation, int fenced_epoch): bool
+                with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.phase != 0 || tenant == "" || run == "" ||
+         revision == "" || verified_generation < 1 ||
+         fenced_epoch < 1; then return false; fi
+      s.tenant_id = tenant;
+      s.run_id = run;
+      s.source_revision = revision;
+      s.generation = verified_generation;
+      s.activation_epoch = fenced_epoch;
+      s.version = 1;
+      s.phase = 1;
+      return true;
+    });
+  }
+
+  // All changes require exact tenant/run/revision, generation, epoch and CAS.
+  // Register the entire bounded graph before any child dispatch.
+  pub register_child(String tenant, String run, String revision,
+                     int generation, int epoch, int expected_version,
+                     String child_id): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 1 ||
+         child_id == "" || s.child_ids.size >= 64 ||
+         s.version >= 2147483646; then return false; fi
+      for (const existing of s.child_ids) {
+        if existing == child_id; then return false; fi
+      }
+      s.child_ids.add(child_id);
+      s.child_states.add(0);
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  pub start_run(String tenant, String run, String revision,
+                int generation, int epoch, int expected_version): bool
+                with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 1 ||
+         s.child_ids.size == 0 ||
+         s.version >= 2147483646; then return false; fi
+      s.phase = 2;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // This transition is not tool dispatch permission. The adapter must have
+  // persisted its prepared effect, including the idempotency key, already.
+  pub start_child(String tenant, String run, String revision,
+                  int generation, int epoch, int expected_version,
+                  String child_id): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 2 ||
+         s.version >= 2147483646; then return false; fi
+      let int i = 0;
+      for (const id of s.child_ids) {
+        if id == child_id && s.child_states[i] == 0; then
+          s.child_states[i] = 1;
+          s.version = s.version + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
+  }
+
+  // Timeout never implies failure or retry: external effect may have applied.
+  pub mark_child_unknown(String tenant, String run, String revision,
+                         int generation, int epoch, int expected_version,
+                         String child_id): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 2 ||
+         s.unresolved_count >= 64 ||
+         s.version >= 2147483646; then return false; fi
+      let int i = 0;
+      for (const id of s.child_ids) {
+        if id == child_id && s.child_states[i] == 1; then
+          s.child_states[i] = 3;
+          s.unresolved_count = s.unresolved_count + 1;
+          s.version = s.version + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
+  }
+
+  // Receipt MUST be independently authenticated, tied to exact effect key,
+  // source SHA and tenant, and proven durable BEFORE this protocol method.
+  pub settle_child(String tenant, String run, String revision,
+                   int generation, int epoch, int expected_version,
+                   String child_id, String verified_receipt): bool
+                   with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 2 ||
+         verified_receipt == "" || s.receipt_ids.size >= 64 ||
+         s.version >= 2147483646; then return false; fi
+      for (const previous of s.receipt_ids) {
+        if previous == verified_receipt; then return false; fi
+      }
+      let int i = 0;
+      for (const id of s.child_ids) {
+        if id == child_id &&
+           (s.child_states[i] == 1 || s.child_states[i] == 3); then
+          if s.child_states[i] == 3; then
+            s.unresolved_count = s.unresolved_count - 1;
+          fi
+          s.child_states[i] = 2;
+          s.receipt_ids.add(verified_receipt);
+          s.version = s.version + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
+  }
+
+  // Only an authenticated NOT-APPLIED reconciliation may fail an in-doubt
+  // child; this does NOT implicitly retry or compensate it.
+  pub fail_reconciled_child(String tenant, String run, String revision,
+                            int generation, int epoch, int expected_version,
+                            String child_id, String verified_receipt): bool
+                            with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 2 ||
+         verified_receipt == "" || s.receipt_ids.size >= 64 ||
+         s.version >= 2147483646; then return false; fi
+      for (const previous of s.receipt_ids) {
+        if previous == verified_receipt; then return false; fi
+      }
+      let int i = 0;
+      for (const id of s.child_ids) {
+        if id == child_id && s.child_states[i] == 3; then
+          s.unresolved_count = s.unresolved_count - 1;
+          s.child_states[i] = 4;
+          s.receipt_ids.add(verified_receipt);
+          s.phase = 3;
+          s.version = s.version + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
+  }
+
+  // A failed or unknown child forbids successful run completion.
+  pub complete_run(String tenant, String run, String revision,
+                   int generation, int epoch, int expected_version): bool
+                   with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 2 ||
+         s.unresolved_count != 0 || s.child_ids.size == 0 ||
+         s.version >= 2147483646; then return false; fi
+      for (const child_state of s.child_states) {
+        if child_state != 2; then return false; fi
+      }
+      s.phase = 4;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // Only before any child may have been dispatched. An in-flight / unknown
+  // tool effect must be reconciled or explicitly compensated separately.
+  pub cancel_unstarted(String tenant, String run, String revision,
+                       int generation, int epoch, int expected_version): bool
+                       with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision ||
+         generation != s.generation || epoch != s.activation_epoch ||
+         expected_version != s.version || s.phase != 1 ||
+         s.version >= 2147483646; then return false; fi
+      s.phase = 5;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // Detached scalar observations, not writable state loans or capabilities.
+  pub current_version(): int with state.read {
+    return self.handle_state(|s| -> { return s.version; });
+  }
+  pub current_phase(): int with state.read {
+    return self.handle_state(|s| -> { return s.phase; });
+  }
+  pub unresolved_effects(): int with state.read {
+    return self.handle_state(|s| -> { return s.unresolved_count; });
+  }
+end
