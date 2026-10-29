@@ -26,22 +26,25 @@ function wellFormedUnicode(text) {
   return true;
 }
 
-function plainDataRecord(value, keys) {
-  // Descriptor checks must never invoke a caller-supplied getter. Proxy traps
-  // may throw: treat such input as invalid instead of crashing admission.
+function closedDataRecord(value, keys) {
+  // Snapshot own data descriptors WITHOUT property reads: Proxy.get and
+  // accessor getters must never run in the admission authority path.
   try {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
     const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) return false;
+    if (prototype !== Object.prototype && prototype !== null) return null;
     const own = Reflect.ownKeys(value);
     if (own.length !== keys.length ||
-        own.some(key => typeof key !== 'string' || !keys.includes(key))) return false;
-    return keys.every(key => {
+        own.some(key => typeof key !== 'string' || !keys.includes(key))) return null;
+    const snapshot = Object.create(null);
+    for (const key of keys) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      return descriptor && Object.hasOwn(descriptor, 'value') &&
-        descriptor.enumerable === true;
-    });
-  } catch { return false; }
+      if (!descriptor || !Object.hasOwn(descriptor, 'value') ||
+          descriptor.enumerable !== true) return null;
+      snapshot[key] = descriptor.value;
+    }
+    return snapshot;
+  } catch { return null; }
 }
 
 // No parser-based or prompt-text check can grant tool permissions. The output is DATA.
@@ -79,9 +82,10 @@ export function create_context_admission({ tenant_id, task_id, exact_revision, t
 
   // Async attestation may complete out of order. Recheck state AFTER awaiting it.
   const add = async candidate => {
-    if (sealed || pending >= MAX_PENDING_VERIFICATIONS ||
-        !plainDataRecord(candidate, ['memory_id', 'evidence_ref', 'excerpt'])) return false;
-    const { memory_id, evidence_ref, excerpt } = candidate;
+    if (sealed || pending >= MAX_PENDING_VERIFICATIONS) return false;
+    const clean = closedDataRecord(candidate, ['memory_id', 'evidence_ref', 'excerpt']);
+    if (!clean) return false;
+    const { memory_id, evidence_ref, excerpt } = clean;
     if (!scopedId(memory_id) || !evidenceId(evidence_ref) ||
         typeof excerpt !== 'string' || excerpt.length === 0 ||
         !wellFormedUnicode(excerpt) ||
@@ -100,12 +104,13 @@ export function create_context_admission({ tenant_id, task_id, exact_revision, t
     // The proof is valid ONLY if the trusted verifier independently authenticates it.
     // The *trusted verifier*, not the model, returns a closed data-only proof.
     // A getter, Proxy trap, or injected field cannot become approval.
-    if (!plainDataRecord(proof, ['authorized', 'tenant_id', 'task_id',
-        'exact_revision', 'memory_id', 'evidence_ref', 'excerpt_sha256'])) return false;
-    if (proof.authorized !== true ||
-        proof.tenant_id !== tenant_id || proof.task_id !== task_id ||
-        proof.exact_revision !== exact_revision || proof.memory_id !== memory_id ||
-        proof.evidence_ref !== evidence_ref || proof.excerpt_sha256 !== excerpt_sha256 ||
+    const checked = closedDataRecord(proof, ['authorized', 'tenant_id', 'task_id',
+        'exact_revision', 'memory_id', 'evidence_ref', 'excerpt_sha256']);
+    if (!checked) return false;
+    if (checked.authorized !== true ||
+        checked.tenant_id !== tenant_id || checked.task_id !== task_id ||
+        checked.exact_revision !== exact_revision || checked.memory_id !== memory_id ||
+        checked.evidence_ref !== evidence_ref || checked.excerpt_sha256 !== excerpt_sha256 ||
         sealed || entries.length >= MAX_EXCERPTS ||
         entries.some(r => r.memory_id === memory_id)) return false;
 
