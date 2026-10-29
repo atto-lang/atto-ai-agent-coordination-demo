@@ -1,0 +1,144 @@
+// Pure Oreslang, userland experimental scorecard; NOT a trusted LLM judge.
+// One actor per experiment, tenant, model and corpus revision.
+// Grounded in DSPy/GraphRAG component-ablation and Lost-in-the-Middle studies.
+// External evaluator must independently authenticate data and grade answers.
+// This actor accepts reported booleans; neither true citations, model runs,
+// human review nor tool safety is verified by this in-memory actor.
+// Strategies: 1 exact-match, 2 graph, 3 vector, 4 hybrid.
+define isolated actor RetrievalScorecardActor as
+  state {
+    tenant_id: String = "";
+    run_id: String = "";
+    model_id: String = "";
+    corpus_revision: String = "";
+    configured: bool = false;
+    sealed: bool = false;
+    generation: int = 0;
+    max_results: int = 0;
+    case_ids: Array<String> = new Array<String>();
+    case_strategies: Array<int> = new Array<int>();
+    receipt_refs: Array<String> = new Array<String>();
+    totals: Array<int> = new Array<int>();
+    grounded_correct: Array<int> = new Array<int>();
+    unsafe_attempts: Array<int> = new Array<int>();
+  }
+
+  pub configure(String tenant, String run, String model,
+                String exact_corpus_revision, int result_cap): bool
+                with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.configured || tenant == "" || run == "" || model == "" ||
+         exact_corpus_revision == "" ||
+         result_cap < 1 || result_cap > 512; then return false; fi
+      s.tenant_id = tenant;
+      s.run_id = run;
+      s.model_id = model;
+      s.corpus_revision = exact_corpus_revision;
+      s.max_results = result_cap;
+      s.totals.add(0);
+      s.totals.add(0);
+      s.totals.add(0);
+      s.totals.add(0);
+      s.grounded_correct.add(0);
+      s.grounded_correct.add(0);
+      s.grounded_correct.add(0);
+      s.grounded_correct.add(0);
+      s.unsafe_attempts.add(0);
+      s.unsafe_attempts.add(0);
+      s.unsafe_attempts.add(0);
+      s.unsafe_attempts.add(0);
+      s.configured = true;
+      s.generation = 1;
+      return true;
+    });
+  }
+
+  // Reports are only as trustworthy as the *external* evaluator.
+  // A model-reported "correct" or receipt string does NOT grant authority.
+  // A score is grounded only when answer/citation are both correct and
+  // the response proposed zero tool actions. This is a simple metric, not
+  // a claim that no tool was actually dispatched elsewhere.
+  pub record(String tenant, String run, String model,
+             String exact_corpus_revision, String case_id,
+             int strategy, String evaluation_receipt,
+             bool answer_correct, bool citation_grounded,
+             bool attempted_tool, int expected_generation): bool
+             with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if !s.configured || s.sealed ||
+         tenant != s.tenant_id || run != s.run_id ||
+         model != s.model_id || exact_corpus_revision != s.corpus_revision ||
+         case_id == "" || evaluation_receipt == "" ||
+         strategy < 1 || strategy > 4 ||
+         s.case_ids.size >= s.max_results ||
+         expected_generation != s.generation ||
+         s.generation >= 2147483646; then return false; fi
+      let int i = 0;
+      for (const previous of s.case_ids) {
+        if previous == case_id &&
+           s.case_strategies[i] == strategy; then return false; fi
+        if s.receipt_refs[i] == evaluation_receipt; then return false; fi
+        i = i + 1;
+      }
+      val int index = strategy - 1;
+      s.case_ids.add(case_id);
+      s.case_strategies.add(strategy);
+      s.receipt_refs.add(evaluation_receipt);
+      s.totals[index] = s.totals[index] + 1;
+      if answer_correct && citation_grounded && !attempted_tool; then
+        s.grounded_correct[index] = s.grounded_correct[index] + 1;
+      fi
+      if attempted_tool; then
+        s.unsafe_attempts[index] = s.unsafe_attempts[index] + 1;
+      fi
+      s.generation = s.generation + 1;
+      return true;
+    });
+  }
+
+  pub seal(String tenant, String run, String model,
+           String exact_corpus_revision, int expected_generation): bool
+           with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if !s.configured || s.sealed || s.case_ids.size == 0 ||
+         tenant != s.tenant_id || run != s.run_id ||
+         model != s.model_id || exact_corpus_revision != s.corpus_revision ||
+         expected_generation != s.generation ||
+         s.generation >= 2147483646; then return false; fi
+      s.sealed = true;
+      s.generation = s.generation + 1;
+      return true;
+    });
+  }
+
+  pub total_for(int strategy): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if !s.sealed || strategy < 1 || strategy > 4; then
+        return Err("unsealed or unknown strategy");
+      fi
+      return Ok(s.totals[strategy - 1]);
+    });
+  }
+
+  pub grounded_for(int strategy): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if !s.sealed || strategy < 1 || strategy > 4; then
+        return Err("unsealed or unknown strategy");
+      fi
+      return Ok(s.grounded_correct[strategy - 1]);
+    });
+  }
+
+  pub unsafe_for(int strategy): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if !s.sealed || strategy < 1 || strategy > 4; then
+        return Err("unsealed or unknown strategy");
+      fi
+      return Ok(s.unsafe_attempts[strategy - 1]);
+    });
+  }
+
+  pub current_generation(): int with state.read {
+    return self.handle_state(|s| -> { return s.generation; });
+  }
+end
