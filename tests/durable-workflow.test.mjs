@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, appendFileSync, writeFileSync, unlinkSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -82,4 +82,33 @@ process.kill(process.pid, 'SIGKILL');`;
   assert.equal(s.seq, 3);
   assert.equal(s.intents.effect.outcome, 'pending');
   assert.equal(s.completed.effect, undefined);
+});
+
+test('journal writer lock rejects concurrent or abandoned owner instead of racing', () => {
+  const d=dir(), f=new DurableWorkflow(d,'guarded',sha);
+  writeFileSync(f.path+'.lock','other-writer');
+  assert.throws(()=>f.begin(),/writer lock unavailable/);
+  assert.equal(f.state.seq,0);
+  unlinkSync(f.path+'.lock');
+  f.begin();
+  assert.equal(new DurableWorkflow(d,'guarded',sha).state.seq,1);
+});
+test('external state snapshots cannot mutate authoritative workflow or forged receipts', () => {
+  const d=dir(), f=new DurableWorkflow(d,'guarded',sha);
+  const leaked=f.state;
+  leaked.status='running'; leaked.approved=true;
+  leaked.completed.fake='forged';
+  assert.equal(f.state.status,'new');
+  assert.equal(f.state.approved,false);
+  assert.equal(f.state.completed.fake,undefined);
+  assert.throws(()=>f.intent('fake',digest),/effect not authorized/);
+  f.begin();
+  assert.equal(new DurableWorkflow(d,'guarded',sha).state.status,'planned');
+});
+test('rejects a journal symlink rather than overwriting another file', () => {
+  const d=dir(), target=join(d,'important.txt');
+  writeFileSync(target,'do not touch');
+  symlinkSync(target,join(d,'guarded.journal'));
+  assert.throws(()=>new DurableWorkflow(d,'guarded',sha),/unsafe journal file/);
+  assert.equal(readFileSync(target,'utf8'),'do not touch');
 });
