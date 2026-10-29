@@ -1,0 +1,56 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,writeFileSync,symlinkSync,readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {WorkflowCapabilityIssuer,WorkflowCapabilityVerifier} from '../reference/workflow-capabilities.mjs';
+import {SqliteWorkflowSupervisor} from '../reference/sqlite-supervisor.mjs';
+const key=Buffer.alloc(32,0xb3), another=Buffer.alloc(32,0xc4);
+const issuer=new WorkflowCapabilityIssuer(key), verifier=new WorkflowCapabilityVerifier(key);
+const revision='a'.repeat(40), scope={tenant:'tenant-a',run:'run-1',revision};
+const valid=(action,sc)=>issuer.issue(action,sc,Date.now()+60_000);
+const root=()=>mkdtempSync(join(tmpdir(),'ores-secure-'));
+test('startup fails closed without valid 32-byte key and verifier',()=>{
+ assert.throws(()=>new WorkflowCapabilityIssuer(Buffer.alloc(31)),/32\+ byte secret/);
+ assert.throws(()=>new WorkflowCapabilityVerifier('password'),/32\+ byte secret/);
+ assert.throws(()=>new SqliteWorkflowSupervisor(root()),/capability verifier required/);
+});
+test('signed capability binds exact action/tenant/run/revision/epoch/expiry',()=>{
+ const token=valid('activate',{...scope,epoch:0});
+ assert.equal(verifier.require(token,'activate',{...scope,epoch:0}),true);
+ assert.throws(()=>verifier.require(token,'activate',{...scope,epoch:1}),/not authorized/);
+ assert.throws(()=>verifier.require(token,'prepare_effect',{...scope,epoch:0}),/not authorized/);
+ assert.throws(()=>verifier.require(token,'activate',{...scope,run:'other',epoch:0}),/not authorized/);
+ assert.throws(()=>verifier.require(token,'activate',{...scope,revision:'b'.repeat(40),epoch:0}),/not authorized/);
+ assert.throws(()=>new WorkflowCapabilityVerifier(another).require(token,'activate',{...scope,epoch:0}),/signature/);
+ const corrupt=token.slice(0,-1)+(token.endsWith('a')?'b':'a');
+ assert.throws(()=>verifier.require(corrupt,'activate',{...scope,epoch:0}),/signature/);
+ assert.throws(()=>verifier.require(issuer.issue('activate',{...scope,epoch:0},Date.now()-1000),'activate',{...scope,epoch:0}),/expired/);
+ assert.throws(()=>verifier.require(issuer.issue('activate',{...scope,epoch:0},Date.now()+600000),'activate',{...scope,epoch:0}),/oversized/);
+});
+test('DB methods refuse missing/foreign capabilities and activation replay',()=>{
+ const db=new SqliteWorkflowSupervisor(root(),verifier);
+ assert.throws(()=>db.create_run(scope.tenant,scope.run,scope.revision),/capability required/);
+ db.create_run(scope.tenant,scope.run,scope.revision,valid('create_run',scope));
+ assert.throws(()=>db.inspect(scope.tenant,scope.run,scope.revision),/capability required/);
+ assert.equal(db.inspect(scope.tenant,scope.run,scope.revision,valid('inspect',scope)).workflow.epoch,0);
+ const token=valid('activate',{...scope,epoch:0});
+ assert.throws(()=>db.activate(scope.tenant,scope.run,scope.revision,0,valid('create_run',scope)),/not authorized/);
+ const lease=db.activate(scope.tenant,scope.run,scope.revision,0,token);
+ assert.equal(lease.epoch,1);
+ assert.throws(()=>db.activate(scope.tenant,scope.run,scope.revision,0,token),/stale revision or epoch|epoch overflow/);
+ assert.throws(()=>db.activate(scope.tenant,scope.run,scope.revision,1,token),/not authorized/);
+ const effect={...scope,epoch:lease.epoch,version:lease.version,step:'s1',key:'k1',digest:'b'.repeat(64)};
+ assert.throws(()=>db.prepare_effect(effect),/capability required/);
+ assert.throws(()=>db.prepare_effect(effect,valid('prepare_effect',{...effect,run:'other'})),/not authorized/);
+ db.prepare_effect(effect,valid('prepare_effect',effect));
+ assert.throws(()=>db.finish({...scope,epoch:lease.epoch,version:lease.version+1}),/capability required/);
+ db.close();
+});
+test('unsafe existing symlink DB never replaces target content',()=>{
+ const dir=root(),target=join(dir,'important.txt'),link=join(dir,'workflow-supervisor.sqlite');
+ writeFileSync(target,'untouched',{mode:0o600});
+ symlinkSync(target,link);
+ assert.throws(()=>new SqliteWorkflowSupervisor(dir,verifier),/unsafe SQLite database file/);
+ assert.equal(readFileSync(target,'utf8'),'untouched');
+});
