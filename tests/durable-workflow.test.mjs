@@ -26,7 +26,9 @@ test('refuses unauthorized effects, stale writer, duplicate keys and stale commi
   first.begin();
   assert.throws(() => stale.begin(), /stale writer/);
   assert.throws(() => new DurableWorkflow(d, 'work-1', 'b'.repeat(40)), /revision mismatch/);
-  first.approve(); first.intent('op-1', digest);
+  first.approve();
+  assert.throws(() => first.intent('__proto__', digest), /bad idempotency key/);
+  first.intent('op-1', digest);
   assert.throws(() => first.intent('op-1', digest), /duplicate effect key/);
   assert.throws(() => first.finish(), /unresolved effect/);
   assert.throws(() => first.cancel(), /pending effect/);
