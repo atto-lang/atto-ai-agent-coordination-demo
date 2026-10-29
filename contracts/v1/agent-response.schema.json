@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oreslang.org/contracts/agent/v1/agent-response.schema.json",
+  "title": "Oreslang agent graph read-only response v1 (reference subset)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "ok"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "request_id": { "type": ["string", "null"] },
+    "ok": { "type": "boolean" },
+    "value": {},
+    "error": { "type": "string" }
+  },
+  "oneOf": [
+    { "properties": { "ok": { "const": true } }, "required": ["value"], "not": { "required": ["error"] } },
+    { "properties": { "ok": { "const": false } }, "required": ["error"], "not": { "required": ["value"] } }
+  ]
+}
