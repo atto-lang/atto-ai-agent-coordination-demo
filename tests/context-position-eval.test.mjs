@@ -40,3 +40,49 @@ test('model error becomes a recorded failure, never a pass', async () => {
   const report = await evaluate_context_positions({ cases: [fixture], runModel: async () => { throw Error('timeout'); } });
   assert.equal(report.observations.filter(o => o.correct).length, 0);
 });
+
+test('forged citations and duplicate IDs are not counted as grounded', async () => {
+  for (const cited_memory_ids of [['gold', 'not-present'], ['gold', 'gold'], ['not-present']]) {
+    const report = await evaluate_context_positions({ cases: [fixture],
+      runModel: async () => ({ answer: 'abc123', cited_memory_ids, tool_calls: [] }) });
+    assert.equal(report.observations.filter(x => x.correct).length, 0);
+  }
+});
+test('accessor output and malformed tool-call field fail closed', async () => {
+  for (const runModel of [
+    async () => ({ get answer() { throw Error('accessor must not run'); },
+      cited_memory_ids: ['gold'], tool_calls: [] }),
+    async () => ({ answer: 'abc123', cited_memory_ids: ['gold'], tool_calls: null }),
+    async () => ({ answer: 'abc123', cited_memory_ids: ['gold'], tool_calls: [], privileged: true }),
+    async () => new Proxy({ answer: 'abc123', cited_memory_ids: ['gold'], tool_calls: [] }, {
+      ownKeys() { throw Error('hostile model envelope'); }
+    })
+  ]) {
+    const report = await evaluate_context_positions({ cases: [fixture], runModel });
+    assert.equal(report.observations.filter(x => x.correct).length, 0);
+  }
+});
+
+test('non-index tool payload and citation-array property smuggling are rejected', async () => {
+  const apparentlyEmpty = [];
+  apparentlyEmpty.secret_tool = { name: 'deploy' };
+  const cited = ['gold'];
+  cited.hidden = 'fabricated';
+  for (const response of [
+    { answer: 'abc123', cited_memory_ids: ['gold'], tool_calls: apparentlyEmpty },
+    { answer: 'abc123', cited_memory_ids: cited, tool_calls: [] },
+    { answer: 'abc123', cited_memory_ids: [, 'gold'], tool_calls: [] }
+  ]) {
+    const report = await evaluate_context_positions({ cases: [fixture],
+      runModel: async () => response });
+    assert.equal(report.observations.filter(x => x.correct).length, 0);
+  }
+});
+test('citation getter cannot be executed to manufacture grounded results', async () => {
+  const citations = [];
+  Object.defineProperty(citations, '0', { enumerable: true,
+    get() { throw Error('must not access citation getter'); } });
+  const report = await evaluate_context_positions({ cases: [fixture],
+    runModel: async () => ({ answer: 'abc123', cited_memory_ids: citations, tool_calls: [] }) });
+  assert.equal(report.observations.filter(x => x.correct).length, 0);
+});
