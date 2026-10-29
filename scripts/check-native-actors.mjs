@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Compile-only gate for the eight native .ores actors plus the actor-mail fixture.
+// Compile-only gate for the eight native .ores actors plus both actor-mail fixtures.
 // This executes the Java OresMain --check compiler, NOT guest actor behavior.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
@@ -11,7 +11,8 @@ const files = [
   'src/decision_gate.ores', 'src/decision_tree.ores',
   'src/evidence_ledger.ores', 'src/knowledge_cache.ores',
   'src/knowledge_graph.ores', 'src/workflow.ores',
-  'tests/guest/agent_pipeline.ores'
+  'tests/guest/agent_pipeline.ores',
+  'tests/guest/direct_agent_hop.ores'
 ];
 function fail(reason, code=2) {
   console.error('NATIVE_CHECK_UNVERIFIED ' + reason);
