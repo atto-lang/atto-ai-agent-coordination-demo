@@ -119,20 +119,49 @@ define isolated actor InferenceReservationActor as
     });
   }
 
-  // Observability is not authorization. No mutable state arrays are exposed.
-  pub current_generation(): int with state.read {
-    return self.handle_state(|s| -> { return s.generation; });
+  // Read-only counters reveal model/tenant load: enforce scope even for
+  // observation methods. This is NOT a replacement for caller authentication.
+  pub current_generation(String tenant, String model,
+                         String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.generation);
+    });
   }
 
-  pub in_flight(): int with state.read {
-    return self.handle_state(|s| -> { return s.active_count; });
+  pub in_flight(String tenant, String model,
+                String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.active_count);
+    });
   }
 
-  pub reserved_capacity(): int with state.read {
-    return self.handle_state(|s| -> { return s.reserved_units; });
+  pub reserved_capacity(String tenant, String model,
+                        String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.reserved_units);
+    });
   }
 
-  pub current_phase(): int with state.read {
-    return self.handle_state(|s| -> { return s.phase; });
+  pub current_phase(String tenant, String model,
+                    String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.phase);
+    });
   }
 end
