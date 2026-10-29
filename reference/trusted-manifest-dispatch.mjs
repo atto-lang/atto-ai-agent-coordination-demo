@@ -105,11 +105,17 @@ export function create_trusted_manifest_dispatch({
       // A claim implementation that only stores in process memory is NOT safe
       // for recovery or concurrent hosts; use storage-enforced uniqueness.
       if (await claimDispatch(bound) !== true) return false;
+      // A revocation/revision change while claiming must still fail closed.
+      // This narrows but cannot eliminate the final host-to-provider TOCTOU
+      // window: the trusted model service must enforce policy atomically too.
+      if (await isCurrentRevision(bound) !== true) return false;
+      if (await authorizeDispatch(bound) !== true) return false;
       // Untrusted model input is never an approval or a tool capability.
       // The trusted model service must have NO ambient privileged tools.
       await submitModelData(Object.freeze({
         classification: 'untrusted_context_data',
         tenant_id, task_id, exact_revision,
+        dispatch_id, context_sha256: bound.context_sha256,
         context_json: context.context_json,
         utf8_bytes: context.utf8_bytes,
         measured_tokens: context.measured_tokens,
