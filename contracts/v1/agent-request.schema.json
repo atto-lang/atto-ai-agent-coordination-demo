@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oreslang.org/contracts/agent/v1/agent-request.schema.json",
+  "title": "Oreslang agent graph read-only request v1 (reference subset)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "tenant_id", "actor_id", "expected_revision", "operation", "args"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "request_id": { "$ref": "#/$defs/identifier" },
+    "tenant_id": { "$ref": "#/$defs/identifier" },
+    "actor_id": { "$ref": "#/$defs/identifier" },
+    "expected_revision": { "$ref": "#/$defs/identifier" },
+    "operation": { "enum": ["knowledge.get_entity", "knowledge.neighbors", "decision.next", "workflow.status"] },
+    "args": { "type": "object", "maxProperties": 8 }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+  }
+}

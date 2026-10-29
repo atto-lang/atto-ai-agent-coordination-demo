@@ -45,13 +45,70 @@ A code-indexer ingests symbols, files and dependency edges into a `KnowledgeGrap
 
 See [architecture](docs/ARCHITECTURE.md), [invariants and trust boundaries](docs/INVARIANTS.md), and [example scenario](examples/repository-agent-flow.md).
 
+
+## P0: executable actor-mail guest fixture (pending native compiler)
+
+`tests/guest/agent_pipeline.ores` models **one cache actor and three workers**
+(`ResearchAgent`, `AnalysisAgent`, `ExecutionAgent`). Main mediates typed
+`ActorMail<String>` messages and verifies that the cache remains live for two
+queries; `tests/guest/agent_pipeline.stdout` pins the exact oracle.
+
+With a previously **built, trusted, clean** Java reference compiler checkout,
+run:
+
+```bash
+export ORESLANG_COMPILER_ROOT=/absolute/path/to/oreslang-source.java
+export ORESLANG_COMPILER_SHA="$(git -C "$ORESLANG_COMPILER_ROOT" rev-parse HEAD)"
+node scripts/run-native-guest.mjs
+```
+
+See [P0 native acceptance and compiler build steps](docs/P0_NATIVE_ACCEPTANCE.md).
+The runner rejects missing/mismatched source revisions, missing build artifacts,
+nonzero exits, timeouts and stdout drift. **Nothing in the existing Node.js
+model or source-contract tests establishes native Oreslang compilation.** The
+`executed` message is deliberately inert; it does not authorize or invoke tools.
+Direct actor-to-actor forwarding, durable recovery, sandboxing, JDK25 exact-head
+evidence and five-backend parity remain unverified.
+
+## Reference coordination, durability and interoperability
+
+The platform design deliberately separates **knowledge, decision and execution
+graphs**; it does not spawn one actor per graph entity or add a `graph actor`
+language keyword. See [Distributed intelligence graph](docs/DISTRIBUTED_INTELLIGENCE_GRAPH.md).
+
+- `reference/durable-workflow.mjs`: append-only hash-chain journal, restart
+  replay, idempotency keys and fail-closed uncertain-effect reconciliation.
+  The reference is **single-writer**, without distributed fencing, production
+  storage hardening or native Oreslang integration.
+- `reference/agent-gateway.mjs`: read-only JSON HTTP ingress with revision,
+  tenant and bearer-token gates, for clients written in any language.
+  It uses in-memory demo values, **not** the eight Oreslang actors.
+- `contracts/v1/agent-*.schema.json`: versioned request/response contract.
+  MCP, A2A, client SDKs, authenticated logical actor generation and full
+  JSON Schema runtime admission remain future work.
+
+Run the strictly labeled JavaScript-only Map-versus-serialized-queue microbenchmark via `node scripts/bench-reference.mjs`. Its figures do **not** benchmark Oreslang actors or predict production performance.
+
+A local demonstration gateway (Node.js 22+) requires an explicit 32+ byte token
+and 40-hex revision, and binds to `127.0.0.1` only:
+
+```sh
+export ORES_AGENT_DEMO_TOKEN='replace-with-a-random-secret-32-bytes-minimum'
+export ORES_AGENT_DEMO_REVISION='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+node scripts/start-agent-gateway.mjs
+```
+
+Treat the token/revision above as demonstration placeholders; do not use
+the sample secret in a deployment. The gateway deliberately has no write,
+tool-execution or inference endpoint.
+
 ## Validation
 
 ```sh
 node --test tests/*.test.mjs
 ```
 
-The suite combines **source/structure checks** and six **independent JavaScript reference-model tests** for the intended DAG/cache transitions. Neither proves Oreslang compilation or runtime semantics. The workflow runs in this repository without external source mirroring. Native compiler execution must use authorized environments and be reported separately, including actual job-step evidence.
+The suite combines source-contract assertions, six JavaScript DAG/cache reference-model cases, seven independent **journal/recovery reference-model** tests (including two forced `SIGKILL` windows), four authenticated gateway tests, two protocol-schema tests and guest-runner preflight tests. These are NOT native Oreslang execution or backend parity evidence. Run results must be reported separately from GitHub runner admission.
 
 ## Userland constraints
 
