@@ -4,17 +4,169 @@
   "title": "Oreslang agent graph read-only request v1 (reference subset)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "request_id", "tenant_id", "actor_id", "expected_revision", "operation", "args"],
+  "required": [
+    "schema_version",
+    "request_id",
+    "tenant_id",
+    "actor_id",
+    "expected_revision",
+    "operation",
+    "args"
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
-    "request_id": { "$ref": "#/$defs/identifier" },
-    "tenant_id": { "$ref": "#/$defs/identifier" },
-    "actor_id": { "$ref": "#/$defs/identifier" },
-    "expected_revision": { "$ref": "#/$defs/identifier" },
-    "operation": { "enum": ["knowledge.get_entity", "knowledge.neighbors", "decision.next", "workflow.status"] },
-    "args": { "type": "object", "maxProperties": 8 }
+    "schema_version": {
+      "const": 1
+    },
+    "request_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "tenant_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "actor_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "expected_revision": {
+      "$ref": "#/$defs/revision"
+    },
+    "operation": {
+      "enum": [
+        "knowledge.get_entity",
+        "knowledge.neighbors",
+        "decision.next",
+        "workflow.status"
+      ]
+    },
+    "args": {
+      "type": "object"
+    }
   },
   "$defs": {
-    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
-  }
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "knowledge.get_entity"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "args": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "knowledge.neighbors"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "args": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "decision.next"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "args": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "node_id",
+              "predicate"
+            ],
+            "properties": {
+              "node_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "predicate": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "workflow.status"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "args": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }
