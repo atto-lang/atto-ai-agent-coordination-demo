@@ -199,3 +199,98 @@ int wf_accept_step(wf_store *s,const char *t,const char *r,const char *rev,
 int wf_claim_dispatch(wf_store *s,const char *t,const char *r,const char *rev,
  int64_t epoch,int64_t version,const char *step,const char *key,const char *digest,
  int64_t *new_version) {
+  int a=auth(s,"claim_dispatch",t,r,rev,epoch,version,step,key,digest);if(a)return a;
+  std::lock_guard<std::mutex> lock(s->mutex);
+  Tx tx(s);if(!tx.active)return WF_STORAGE_ERROR;
+  int f=fenced(s,t,r,rev,epoch,version);if(f)return f;
+  auto p=prepare(s,"UPDATE effects SET state='in_doubt' WHERE tenant=? AND run=? AND step=? AND effect_key=? AND digest=? AND state='prepared'");
+  if(!p)return WF_STORAGE_ERROR;
+  bind(p.get(),1,t);bind(p.get(),2,r);bind(p.get(),3,step);bind(p.get(),4,key);bind(p.get(),5,digest);
+  if(step_done(p.get()))return WF_STORAGE_ERROR;
+  if(sqlite3_changes(s->db)!=1)return WF_FENCED;
+  p.reset();if(bump(s,t,r))return WF_STORAGE_ERROR;
+  if(!tx.commit())return WF_STORAGE_ERROR;
+  *new_version=version+1;return WF_OK;
+}
+int wf_reconcile(wf_store *s,const char *t,const char *r,const char *rev,
+ int64_t epoch,int64_t version,const char *step,const char *outcome,
+ const char *receipt,int64_t *new_version) {
+  if(!run_id(t,r,rev)||!safe(step)||!receipt_valid(receipt)||
+     !outcome || (strcmp(outcome,"committed")!=0 && strcmp(outcome,"not_applied")!=0) ||
+     epoch<1||version<1||!new_version)return WF_INVALID;
+  int a=auth(s,"reconcile",t,r,rev,epoch,version,step,nullptr,nullptr,nullptr,outcome,receipt);if(a)return a;
+  // Lookup, then verify externally WITHOUT holding any transaction lock.
+  std::string key,digest;
+  {
+  std::lock_guard<std::mutex> lock(s->mutex);
+  int f=fenced(s,t,r,rev,epoch,version);if(f)return f;
+  auto q=prepare(s,"SELECT effect_key,digest FROM effects WHERE tenant=? AND run=? AND step=? AND state='in_doubt'");
+  if(!q)return WF_STORAGE_ERROR;
+  bind(q.get(),1,t);bind(q.get(),2,r);bind(q.get(),3,step);
+  if(sqlite3_step(q.get())!=SQLITE_ROW)return WF_FENCED;
+  key=(const char*)sqlite3_column_text(q.get(),0);
+  digest=(const char*)sqlite3_column_text(q.get(),1);
+  } // Release connection lock and statement BEFORE external verification.
+  if(s->verify(s->context,t,r,rev,step,key.c_str(),digest.c_str(),outcome,receipt)!=1)return WF_UNAUTHORIZED;
+  std::lock_guard<std::mutex> lock(s->mutex);
+  Tx tx(s);if(!tx.active)return WF_STORAGE_ERROR;
+  int f=fenced(s,t,r,rev,epoch,version);if(f)return f;
+  auto p=prepare(s,"UPDATE effects SET state=?,receipt=? WHERE tenant=? AND run=? AND step=? AND effect_key=? AND digest=? AND state='in_doubt'");
+  if(!p)return WF_STORAGE_ERROR;
+  bind(p.get(),1,outcome);bind(p.get(),2,receipt);bind(p.get(),3,t);bind(p.get(),4,r);bind(p.get(),5,step);bind(p.get(),6,key.c_str());bind(p.get(),7,digest.c_str());
+  int rc=step_done(p.get());if(rc)return rc;
+  if(sqlite3_changes(s->db)!=1)return WF_FENCED;
+  p.reset();
+  auto in=prepare(s,"UPDATE inbox SET state=? WHERE tenant=? AND run=? AND step=?");
+  if(!in)return WF_STORAGE_ERROR;
+  bind(in.get(),1,outcome);bind(in.get(),2,t);bind(in.get(),3,r);bind(in.get(),4,step);
+  if(step_done(in.get()))return WF_STORAGE_ERROR;
+  in.reset();if(bump(s,t,r))return WF_STORAGE_ERROR;
+  if(!tx.commit())return WF_STORAGE_ERROR;
+  *new_version=version+1;return WF_OK;
+}
+int wf_finish(wf_store *s,const char *t,const char *r,const char *rev,
+ int64_t epoch,int64_t version,int64_t *new_version) {
+  if(!run_id(t,r,rev)||epoch<1||version<1||!new_version)return WF_INVALID;
+  int a=auth(s,"finish",t,r,rev,epoch,version);if(a)return a;
+  std::lock_guard<std::mutex> lock(s->mutex);
+  Tx tx(s);if(!tx.active)return WF_STORAGE_ERROR;
+  int f=fenced(s,t,r,rev,epoch,version);if(f)return f;
+  auto c=prepare(s,"SELECT COUNT(*),SUM(CASE WHEN state='committed' THEN 1 ELSE 0 END) FROM effects WHERE tenant=? AND run=?");
+  if(!c)return WF_STORAGE_ERROR;
+  bind(c.get(),1,t);bind(c.get(),2,r);
+  if(sqlite3_step(c.get())!=SQLITE_ROW)return WF_STORAGE_ERROR;
+  int64_t all=sqlite3_column_int64(c.get(),0),done=sqlite3_column_int64(c.get(),1);
+  c.reset();if(all<=0 || all!=done)return WF_FENCED;
+  auto p=prepare(s,"UPDATE workflow SET phase='finished',version=version+1 WHERE tenant=? AND run=?");
+  if(!p)return WF_STORAGE_ERROR;
+  bind(p.get(),1,t);bind(p.get(),2,r);if(step_done(p.get()))return WF_STORAGE_ERROR;
+  p.reset();if(!tx.commit())return WF_STORAGE_ERROR;
+  *new_version=version+1;return WF_OK;
+}
+int wf_inspect(wf_store *s,const char *t,const char *r,const char *rev,
+ int64_t *epoch,int64_t *version,int64_t *prepared,int64_t *in_doubt,
+ int64_t *committed,int64_t *not_applied,int64_t *inbox_count) {
+  if(!run_id(t,r,rev)||!epoch||!version||!prepared||!in_doubt||!committed||!not_applied||!inbox_count)return WF_INVALID;
+  int a=auth(s,"inspect",t,r,rev,0,0);if(a)return a;
+  std::lock_guard<std::mutex> lock(s->mutex);
+  Tx tx(s,false);if(!tx.active)return WF_STORAGE_ERROR;
+  auto p=prepare(s,"SELECT epoch,version FROM workflow WHERE tenant=? AND run=? AND revision=?");
+  if(!p)return WF_STORAGE_ERROR;
+  bind(p.get(),1,t);bind(p.get(),2,r);bind(p.get(),3,rev);
+  if(sqlite3_step(p.get())!=SQLITE_ROW)return WF_FENCED;
+  int64_t e=sqlite3_column_int64(p.get(),0),v=sqlite3_column_int64(p.get(),1);p.reset();
+  auto q=prepare(s,"SELECT SUM(state='prepared'),SUM(state='in_doubt'),SUM(state='committed'),SUM(state='not_applied') FROM effects WHERE tenant=? AND run=?");
+  if(!q)return WF_STORAGE_ERROR;
+  bind(q.get(),1,t);bind(q.get(),2,r);
+  if(sqlite3_step(q.get())!=SQLITE_ROW)return WF_STORAGE_ERROR;
+  int64_t pcount=sqlite3_column_int64(q.get(),0),ucount=sqlite3_column_int64(q.get(),1),ccount=sqlite3_column_int64(q.get(),2),ncount=sqlite3_column_int64(q.get(),3);q.reset();
+  auto in=prepare(s,"SELECT count(*) FROM inbox WHERE tenant=? AND run=?");
+  if(!in)return WF_STORAGE_ERROR;
+  bind(in.get(),1,t);bind(in.get(),2,r);if(sqlite3_step(in.get())!=SQLITE_ROW)return WF_STORAGE_ERROR;
+  int64_t icount=sqlite3_column_int64(in.get(),0);in.reset();
+  if(!tx.commit())return WF_STORAGE_ERROR;
+  *epoch=e;*version=v;*prepared=pcount;*in_doubt=ucount;*committed=ccount;*not_applied=ncount;*inbox_count=icount;
+  return WF_OK;
+}
+}
