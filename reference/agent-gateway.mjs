@@ -46,10 +46,10 @@ export function create_agent_gateway({ token, graph, decision, workflow }) {
         switch(operation){
           case 'knowledge.get_entity':
             if(!valid(args.id)) throw Error('invalid entity id');
-            value=graph.entities[args.id]??null; break;
+            value=Object.hasOwn(graph.entities,args.id)?graph.entities[args.id]:null; break;
           case 'knowledge.neighbors':
             if(!valid(args.id)) throw Error('invalid entity id');
-            value=(graph.edges[args.id]??[]).slice(0,128); break;
+            value=(Object.hasOwn(graph.edges,args.id)?graph.edges[args.id]:[]).slice(0,128); break;
           case 'decision.next':
             if(!valid(args.node_id) || typeof args.predicate!=='boolean')
               throw Error('invalid decision inputs');
