@@ -51,3 +51,42 @@ test('coordinator enforces admission and duplicate-settlement guard', () => {
   assert.match(source, /self.states\[i\] != 0/);
   assert.match(source, /duplicate task key/);
 });
+
+test('decision DAG accepts only previously declared nodes and terminals', () => {
+  const source = read('decision_tree');
+  assert.match(source, /pub fnc add_terminal\s*\(/);
+  assert.match(source, /self\.terminal_ids\.add\(id\)/);
+  assert.match(source, /if !true_known \|\| !false_known; then return false; fi/);
+  assert.match(source, /self\.node_ids\.size \+ self\.terminal_ids\.size >= 256/);
+  assert.match(source, /pub fnc is_terminal\s*\(/);
+  assert.match(source, /required_revision != self\.revision/);
+  assert.doesNotMatch(source, /eval\s*\(|Function\s*\(/);
+});
+
+test('cache binds one graph identity and requires strictly newer revisions', () => {
+  const source = read('knowledge_cache');
+  assert.match(source, /self\.graph_id != "" && id != self\.graph_id/);
+  assert.match(source, /revision <= self\.graph_revision/);
+  assert.match(source, /reusable = i/);
+  assert.match(source, /self\.keys\[reusable\] = key/);
+  assert.match(source, /now >= self\.expires_at\[i\]/);
+  assert.match(source, /self\.keys\.size >= 1024/);
+});
+
+test('workflow transitions require compare-and-set and refuse terminal replay', () => {
+  const source = read('workflow');
+  assert.match(source, /expected_transition != self\.transition_number/);
+  assert.match(source, /self\.phase < 1 \|\| self\.phase > 3/);
+  assert.match(source, /self\.phase >= 4/);
+});
+
+test('evidence, registry and coordinator never derive identity from model text alone', () => {
+  const ledger = read('evidence_ledger');
+  const registry = read('agent_registry');
+  const coordinator = read('agent_coordinator');
+  assert.match(ledger, /steps <= 0/);
+  assert.match(ledger, /duplicate|existing == receipt/);
+  assert.match(registry, /self\.incarnations\[i\] == incarnation/);
+  assert.match(coordinator, /self\.owners\[i\] != owner/);
+  assert.match(coordinator, /self\.states\[i\] != 0/);
+});
