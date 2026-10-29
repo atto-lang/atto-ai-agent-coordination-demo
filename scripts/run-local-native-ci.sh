@@ -62,7 +62,11 @@ check_tree "$compiler" "$ORESLANG_COMPILER_SHA"
     # separate sealed-state compiler integration still in draft.
     node scripts/run-native-guest.mjs
   else
-    # Full gate includes sealed actors, negative typing and both guest tests.
+    # Verify the actual native SQLite transaction backend independently.
+    # This is NOT a linked Oreslang guest execution.
+    bash scripts/check-native-sqlite.sh
+    # Full gate includes sealed actor sources, storage port, typed-negative and
+    # all three native guest stdout oracles.
     node scripts/run-native-acceptance.mjs
   fi
 )
