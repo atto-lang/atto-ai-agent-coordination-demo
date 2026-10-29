@@ -1,0 +1,47 @@
+// An intentionally in-memory state machine for one resumable-workflow model.
+// The caller must persist transitions before externally observable side effects.
+// Stage values: 0 idle; 1 planned; 2 approved; 3 running; 4 completed;
+// 5 cancelled. Terminal stages never restart under the same identity.
+isoactor AgentWorkflowActor {
+  let String workflow_id = "";
+  let String revision = "";
+  let int phase = 0;
+  let int transition_number = 0;
+
+  pub fnc start(String id, String exact_revision): bool {
+    if self.phase != 0 || id == "" || exact_revision == ""; then
+      return false;
+    fi
+    self.workflow_id = id;
+    self.revision = exact_revision;
+    self.phase = 1;
+    self.transition_number = self.transition_number + 1;
+    return true;
+  }
+
+  pub fnc advance(String id, String exact_revision,
+                  int expected_transition, int next_phase): bool {
+    if id != self.workflow_id || exact_revision != self.revision ||
+       expected_transition != self.transition_number; then
+      return false;
+    fi
+    if self.phase == 1 && next_phase != 2; then return false; fi
+    if self.phase == 2 && next_phase != 3; then return false; fi
+    if self.phase == 3 && next_phase != 4; then return false; fi
+    if self.phase < 1 || self.phase > 3; then return false; fi
+    self.phase = next_phase;
+    self.transition_number = self.transition_number + 1;
+    return true;
+  }
+
+  pub fnc cancel(String id, int expected_transition): bool {
+    if id != self.workflow_id || expected_transition != self.transition_number ||
+       self.phase < 1 || self.phase >= 4; then return false; fi
+    self.phase = 5;
+    self.transition_number = self.transition_number + 1;
+    return true;
+  }
+
+  pub fnc stage(): int { return self.phase; }
+  pub fnc revision_number(): int { return self.transition_number; }
+}

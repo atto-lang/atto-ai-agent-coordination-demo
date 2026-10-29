@@ -1,0 +1,70 @@
+// A bounded, actor-owned directed knowledge-graph partition.
+// No graph node is a separate scheduled actor. Returned arrays are new copies.
+// Authoritative cross-shard consistency belongs to a higher-level coordinator.
+isoactor KnowledgeGraphActor {
+  let Array<String> ids = new Array<String>();
+  let Array<String> labels = new Array<String>();
+  let Array<String> edge_from = new Array<String>();
+  let Array<String> edge_to = new Array<String>();
+  let Array<String> edge_kind = new Array<String>();
+  let int revision = 0;
+
+  pub fnc add_entity(String id, String label): bool {
+    if id == "" || self.ids.size >= 4096; then return false; fi
+    for (const existing of self.ids) {
+      if existing == id; then return false; fi
+    }
+    self.ids.add(id);
+    self.labels.add(label);
+    self.revision = self.revision + 1;
+    return true;
+  }
+
+  pub fnc contains(String id): bool {
+    for (const existing of self.ids) {
+      if existing == id; then return true; fi
+    }
+    return false;
+  }
+
+  pub fnc label_of(String id): Result<String, String> {
+    let int i = 0;
+    for (const existing of self.ids) {
+      if existing == id; then return Ok(self.labels[i]); fi
+      i = i + 1;
+    }
+    return Err("unknown entity");
+  }
+
+  pub fnc add_edge(String source, String target, String kind): bool {
+    if kind == "" || self.edge_from.size >= 16384; then return false; fi
+    if !self.contains(source) || !self.contains(target); then return false; fi
+    let int i = 0;
+    for (const existing of self.edge_from) {
+      if existing == source && self.edge_to[i] == target &&
+         self.edge_kind[i] == kind; then return false; fi
+      i = i + 1;
+    }
+    self.edge_from.add(source);
+    self.edge_to.add(target);
+    self.edge_kind.add(kind);
+    self.revision = self.revision + 1;
+    return true;
+  }
+
+  pub fnc neighbors(String source, String kind): Array<String> {
+    let mut Array<String> result = new Array<String>();
+    let int i = 0;
+    for (const from of self.edge_from) {
+      if from == source && self.edge_kind[i] == kind; then
+        result.add(self.edge_to[i]);
+      fi
+      i = i + 1;
+    }
+    return result;
+  }
+
+  pub fnc entity_count(): int { return self.ids.size; }
+  pub fnc edge_count(): int { return self.edge_from.size; }
+  pub fnc current_revision(): int { return self.revision; }
+}

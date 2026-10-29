@@ -1,0 +1,57 @@
+// Bounded version-pinned cache. Clock values are caller-supplied logical epochs.
+// This does not implement a wall-clock or persistent cache, nor automatic eviction.
+isoactor KnowledgeCacheActor {
+  let String graph_id = "";
+  let int graph_revision = -1;
+  let Array<String> keys = new Array<String>();
+  let Array<String> payloads = new Array<String>();
+  let Array<int> expires_at = new Array<int>();
+
+  // Invalidation requires an explicit switch to a newer revision.
+  pub fnc activate(String id, int revision): bool {
+    if id == "" || revision < 0; then return false; fi
+    if id == self.graph_id && revision <= self.graph_revision; then
+      return false;
+    fi
+    self.graph_id = id;
+    self.graph_revision = revision;
+    self.keys = new Array<String>();
+    self.payloads = new Array<String>();
+    self.expires_at = new Array<int>();
+    return true;
+  }
+
+  pub fnc put(String id, int revision, String key,
+              String payload, int expiry, int now): bool {
+    if id != self.graph_id || revision != self.graph_revision ||
+       key == "" || expiry <= now || self.keys.size >= 1024; then
+      return false;
+    fi
+    for (const existing of self.keys) {
+      if existing == key; then return false; fi
+    }
+    self.keys.add(key);
+    self.payloads.add(payload);
+    self.expires_at.add(expiry);
+    return true;
+  }
+
+  pub fnc get(String id, int revision, String key,
+              int now): Result<String, String> {
+    if id != self.graph_id || revision != self.graph_revision; then
+      return Err("cache revision mismatch");
+    fi
+    let int i = 0;
+    for (const existing of self.keys) {
+      if existing == key; then
+        if now >= self.expires_at[i]; then return Err("expired"); fi
+        return Ok(self.payloads[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("cache miss");
+  }
+
+  pub fnc entries(): int { return self.keys.size; }
+  pub fnc revision(): int { return self.graph_revision; }
+}

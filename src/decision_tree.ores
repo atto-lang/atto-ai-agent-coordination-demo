@@ -1,0 +1,40 @@
+// Actor-owned deterministic branch table for a bounded decision DAG.
+// Predicates are evaluated by callers, not by executing model-generated code.
+// A decision route is NOT permission to carry out the resulting action.
+isoactor DecisionTreeActor {
+  let Array<String> node_ids = new Array<String>();
+  let Array<String> true_targets = new Array<String>();
+  let Array<String> false_targets = new Array<String>();
+  let int revision = 0;
+
+  pub fnc add_branch(String id, String on_true, String on_false): bool {
+    if id == "" || on_true == "" || on_false == "" ||
+       self.node_ids.size >= 256; then return false; fi
+    for (const existing of self.node_ids) {
+      if existing == id; then return false; fi
+    }
+    self.node_ids.add(id);
+    self.true_targets.add(on_true);
+    self.false_targets.add(on_false);
+    self.revision = self.revision + 1;
+    return true;
+  }
+
+  pub fnc next(String id, bool predicate,
+               int required_revision): Result<String, String> {
+    if required_revision != self.revision; then
+      return Err("decision graph changed");
+    fi
+    let int i = 0;
+    for (const existing of self.node_ids) {
+      if existing == id; then
+        if predicate; then return Ok(self.true_targets[i]); fi
+        return Ok(self.false_targets[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("unknown decision node");
+  }
+
+  pub fnc current_revision(): int { return self.revision; }
+}

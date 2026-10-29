@@ -1,0 +1,59 @@
+// Fail-closed policy gate for one subject/commit at a time.
+// Proof of authentication, trusted CI, reviewer identity and GitHub policy
+// MUST be performed by an authorized caller, not inferred from booleans here.
+isoactor DecisionGateActor {
+  let String subject_id = "";
+  let String exact_revision = "";
+  let int epoch = 0;
+  let bool checks_passed = false;
+  let bool independent_approval = false;
+  let bool admission_verified = false;
+  let bool closed = true;
+
+  pub fnc begin(String subject, String revision): bool {
+    if subject == "" || revision == ""; then return false; fi
+    if self.epoch >= 2147483646; then return false; fi
+    self.subject_id = subject;
+    self.exact_revision = revision;
+    self.epoch = self.epoch + 1;
+    self.checks_passed = false;
+    self.independent_approval = false;
+    self.admission_verified = false;
+    self.closed = false;
+    return true;
+  }
+
+  pub fnc record_executed_check(String revision, int epoch,
+                                int executed_steps, bool passed,
+                                bool trusted_origin): bool {
+    if self.closed || epoch != self.epoch ||
+       revision != self.exact_revision; then return false; fi
+    self.admission_verified = trusted_origin && executed_steps > 0;
+    self.checks_passed = self.admission_verified && passed;
+    return self.checks_passed;
+  }
+
+  pub fnc record_review(String revision, int epoch,
+                        bool independently_approved): bool {
+    if self.closed || epoch != self.epoch ||
+       revision != self.exact_revision; then return false; fi
+    self.independent_approval = independently_approved;
+    return true;
+  }
+
+  pub fnc can_commit(String revision, int epoch): bool {
+    return !self.closed && revision == self.exact_revision &&
+      epoch == self.epoch && self.admission_verified &&
+      self.checks_passed && self.independent_approval;
+  }
+
+  pub fnc invalidate(): void {
+    self.closed = true;
+    self.checks_passed = false;
+    self.independent_approval = false;
+    self.admission_verified = false;
+    return;
+  }
+
+  pub fnc current_epoch(): int { return self.epoch; }
+}

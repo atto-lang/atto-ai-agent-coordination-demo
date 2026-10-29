@@ -1,0 +1,26 @@
+# Architecture: three graphs over isolated actors
+
+## Knowledge graph
+`KnowledgeGraphActor` owns a partition of entity IDs, labels and typed directed edges. It rejects duplicate nodes/edges, edges with unknown endpoints, and capacity overflow. The query returns a newly allocated array. A graph revision increments on each accepted mutation. There is no cross-partition transaction yet. Partitions should be selected by stable hash and managed by a future directory/supervisor.
+
+## Decision graph
+`DecisionTreeActor` stores a branch table, not executable AI-generated predicates. Callers evaluate typed conditions and pass the resulting bool along with a pinned revision. Its branch table does not prove acyclicity or ensure that targets exist; callers must bound traversal depth and validate the graph. `DecisionGateActor` is **separate**: route selection cannot authorize effects.
+
+## Execution graph
+`AgentCoordinatorActor` admits bounded tasks with unique keys, and `AgentWorkflowActor` enforces forward-only phase transitions with expected version tokens. The prototype neither sends messages between actors nor records transitions durably; delivery, supervisor restarts, persisted outbox, deadlines and dedup across reactivation remain future work.
+
+## Long-lived cache
+`KnowledgeCacheActor` is owner-local and revision-pinned. Every read specifies graph ID, graph revision, and a caller-provided logical epoch. It refuses stale revision reads and expired entries. Cache activation clears old state; it does not automatically evict or refresh individual entries. Callers must supply a trusted monotonic epoch.
+
+## Placement / ownership
+The actor instances isolate mutation and own their bounded arrays. Do not spawn one actor per graph edge or assume separate OS processes. Isolation guarantees beyond actor ownership (dedicated arenas, memory/CPU quotas, admission or sandboxing) must be independently implemented and tested in the compiler/runtime.
+
+## Future interfaces
+1. Stable logical actor ID + incarnation + generation-pinned refs.
+2. Versioned graph snapshots and multi-shard read coordination.
+3. Event log/outbox + checkpoint/restore + migrations and event replay.
+4. Typed async agent-to-agent requests, delegation and cancellation, with bounded messages.
+5. Model/tool adapters, authorization boundary, and external protocol adapters.
+6. Physical actor-owned heaps/arenas across compiler backends.
+
+These are design targets, not features the demo already implements.

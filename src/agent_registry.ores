@@ -1,0 +1,35 @@
+// Bounded logical registry for agent capabilities and incarnations.
+// Do not confuse this with an authenticated transport or a lease service.
+// Re-registration is rejected; supervisor issues a new incarnation identity.
+isoactor AgentRegistryActor {
+  let Array<String> identities = new Array<String>();
+  let Array<String> capabilities = new Array<String>();
+  let Array<int> incarnations = new Array<int>();
+  let int revision = 0;
+
+  pub fnc register(String id, String capability, int incarnation): bool {
+    if id == "" || capability == "" || incarnation <= 0 ||
+       self.identities.size >= 1024; then return false; fi
+    for (const existing of self.identities) {
+      if existing == id; then return false; fi
+    }
+    self.identities.add(id);
+    self.capabilities.add(capability);
+    self.incarnations.add(incarnation);
+    self.revision = self.revision + 1;
+    return true;
+  }
+
+  pub fnc supports(String id, int incarnation,
+                   String capability): bool {
+    let int i = 0;
+    for (const existing of self.identities) {
+      if existing == id && self.incarnations[i] == incarnation &&
+         self.capabilities[i] == capability; then return true; fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  pub fnc current_revision(): int { return self.revision; }
+}
