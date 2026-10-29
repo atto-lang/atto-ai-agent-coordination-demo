@@ -9,8 +9,8 @@ A **userland, native Oreslang** experiment in long-lived isolated actors for AI 
 | Actor | Source | Responsibility |
 | --- | --- | --- |
 | `KnowledgeGraphActor` | `src/knowledge_graph.ores` | Bounded directed entity/relationship partition, revisioned lookup and traversal |
-| `KnowledgeCacheActor` | `src/knowledge_cache.ores` | Version-pinned cache, caller-provided logical expiry, explicit invalidation |
-| `DecisionTreeActor` | `src/decision_tree.ores` | Deterministic branch routing using caller-evaluated predicates |
+| `KnowledgeCacheActor` | `src/knowledge_cache.ores` | Single-graph cache, increasing revisions, caller-provided logical expiry, expired-slot reuse |
+| `DecisionTreeActor` | `src/decision_tree.ores` | Closed acyclic decision DAG with explicit terminals and caller-evaluated predicates |
 | `DecisionGateActor` | `src/decision_gate.ores` | Exact-revision evidence + independent approval, deny-by-default |
 | `EvidenceLedgerActor` | `src/evidence_ledger.ores` | Append-only bounded evidence receipts with subject/revision digest |
 | `AgentCoordinatorActor` | `src/agent_coordinator.ores` | Bounded in-flight work tickets, idempotent rejection, settlement |
@@ -28,10 +28,10 @@ See [architecture](docs/ARCHITECTURE.md), [invariants and trust boundaries](docs
 ## Validation
 
 ```sh
-node --test tests/actor-source-contracts.test.mjs
+node --test tests/*.test.mjs
 ```
 
-These are **source/structure checks only**, *not* proof of Oreslang compilation or runtime semantics. The workflow runs in this repository without external source mirroring. Native compiler execution must use authorized environments and be reported separately, including actual job-step evidence.
+The suite combines **source/structure checks** and six **independent JavaScript reference-model tests** for the intended DAG/cache transitions. Neither proves Oreslang compilation or runtime semantics. The workflow runs in this repository without external source mirroring. Native compiler execution must use authorized environments and be reported separately, including actual job-step evidence.
 
 ## Userland constraints
 
