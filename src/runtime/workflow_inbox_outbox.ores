@@ -1,0 +1,150 @@
+// Native protocol counterpart to the experimental SQLite inbox/outbox model.
+// This actor is IN-MEMORY, and is NOT a durable storage adapter or tool runner.
+// The storage controller must transactionally confirm each transition and
+// authenticate capabilities/receipts before invoking the corresponding method.
+// State 0 prepared, 1 dispatched/in-doubt, 2 externally committed,
+// 3 externally proved not applied.
+define isolated actor WorkflowInboxOutboxActor as
+  state {
+    tenant_id: String = "";
+    run_id: String = "";
+    source_revision: String = "";
+    activation_epoch: int = 0;
+    version: int = 0;
+    message_ids: Array<String> = new Array<String>();
+    step_ids: Array<String> = new Array<String>();
+    effect_keys: Array<String> = new Array<String>();
+    effect_digests: Array<String> = new Array<String>();
+    states: Array<int> = new Array<int>();
+    receipts: Array<String> = new Array<String>();
+  }
+
+  pub configure(String tenant, String run, String revision, int epoch): bool
+      with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.version != 0 || tenant == "" || run == "" ||
+         revision == "" || epoch < 1; then return false; fi
+      s.tenant_id = tenant;
+      s.run_id = run;
+      s.source_revision = revision;
+      s.activation_epoch = epoch;
+      s.version = 1;
+      return true;
+    });
+  }
+
+  // These inputs are trusted protocol data ONLY AFTER external authentication.
+  // No message is admitted before the storage adapter commits inbox+outbox
+  // and the matching workflow CAS in one transaction.
+  pub accept_step(String tenant, String run, String revision, int epoch,
+                  int expected_version, String message_id, String step_id,
+                  String effect_key, String digest): bool
+                  with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision || epoch != s.activation_epoch ||
+         expected_version != s.version || s.version == 0 ||
+         s.version >= 2147483646 ||
+         message_id == "" || step_id == "" ||
+         effect_key == "" || digest == "" ||
+         s.message_ids.size >= 64; then return false; fi
+      for (const prior of s.message_ids) {
+        if prior == message_id; then return false; fi
+      }
+      for (const prior of s.step_ids) {
+        if prior == step_id; then return false; fi
+      }
+      for (const prior of s.effect_keys) {
+        if prior == effect_key; then return false; fi
+      }
+      s.message_ids.add(message_id);
+      s.step_ids.add(step_id);
+      s.effect_keys.add(effect_key);
+      s.effect_digests.add(digest);
+      s.states.add(0);
+      s.receipts.add("");
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // A successful claim reflects a durably committed 0->1 transition. It is
+  // NOT permission to execute an effect unless the dispatcher also holds
+  // a current, independently verified tool capability. Even when a process
+  // dies before external dispatch, in-doubt cannot be re-claimed.
+  pub claim_dispatch(String tenant, String run, String revision, int epoch,
+                     int expected_version, String step_id, String effect_key,
+                     String digest): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision || epoch != s.activation_epoch ||
+         expected_version != s.version || s.version == 0 ||
+         s.version >= 2147483646; then return false; fi
+      let int i = 0;
+      for (const step of s.step_ids) {
+        if step == step_id && s.effect_keys[i] == effect_key &&
+           s.effect_digests[i] == digest && s.states[i] == 0; then
+          s.states[i] = 1;
+          s.version = s.version + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
+  }
+
+  // The caller must prove the remote outcome using an authoritative issuer
+  // bound to exact tenant/run/revision/key/digest, NOT by an LLM assertion.
+  pub reconcile(String tenant, String run, String revision, int epoch,
+                int expected_version, String step_id, String effect_key,
+                String digest, String verified_receipt, bool applied): bool
+                with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision || epoch != s.activation_epoch ||
+         expected_version != s.version || s.version == 0 ||
+         s.version >= 2147483646 || verified_receipt == ""; then
+        return false;
+      fi
+      for (const previous of s.receipts) {
+        if previous == verified_receipt; then return false; fi
+      }
+      let int i = 0;
+      for (const step of s.step_ids) {
+        if step == step_id && s.effect_keys[i] == effect_key &&
+           s.effect_digests[i] == digest && s.states[i] == 1; then
+          if applied; then
+            s.states[i] = 2;
+          else
+            s.states[i] = 3;
+          fi
+          s.receipts[i] = verified_receipt;
+          s.version = s.version + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
+  }
+
+  pub state_of(String tenant, String run, String revision, int epoch,
+               String step_id): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         revision != s.source_revision || epoch != s.activation_epoch ||
+         s.version == 0; then return Err("stale or foreign run"); fi
+      let int i = 0;
+      for (const step of s.step_ids) {
+        if step == step_id; then return Ok(s.states[i]); fi
+        i = i + 1;
+      }
+      return Err("unknown step");
+    });
+  }
+
+  pub current_version(): int with state.read {
+    return self.handle_state(|s| -> { return s.version; });
+  }
+end
