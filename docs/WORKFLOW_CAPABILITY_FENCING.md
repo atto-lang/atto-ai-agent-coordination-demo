@@ -35,7 +35,11 @@ The additional five tests exercise missing/incorrect action grants, short
 key rejection, token tampering, wrong-tenant and wrong-revision scope,
 expiry, replayed activation, unauthorized DB reads, unsafe SQLite symlinks,
 and two real concurrent OS processes attempting the same signed activation.
-Only one process successfully advances the epoch.
+Only one process successfully advances the epoch. A repeated stress run
+also uncovered and fixed a SQLite **startup WAL-mode lock race**: the busy
+handler now runs before journal configuration, and the already-WAL database
+is no longer repeatedly transitioned to WAL. The concurrent activation
+scenario passed six consecutive isolated OS-process runs after the fix.
 
 The original SIGKILL test still kills a process after a **simulated**
 external file effect commits but before local receipt acknowledgment.
@@ -44,7 +48,7 @@ not execute the effect twice. This is real SQLite + subprocess testing
 with a simulated provider, **not** production exactly-once proof.
 
 Verified exact Git blob IDs of locally tested files:
-- `reference/sqlite-supervisor.mjs` `728aa0a9ea38c7825798d6851e43c4ed2923a83a`
+- `reference/sqlite-supervisor.mjs` `1c72567394a3c5fdbd88a4ce995a9f8614cc6b18`
 - `reference/workflow-capabilities.mjs` `59f04198338423290f911698e4dd4f60b24475b0`
 - `tests/sqlite-supervisor.test.mjs` `5ce9ecaeb61816037602a242a2865e4f83c76dec`
 - `tests/workflow-capabilities.test.mjs` `68f1252dce1fc9e38dd6b14c914c8fc18992f98e`
