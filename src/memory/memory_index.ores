@@ -1,7 +1,6 @@
 // Bounded exact-match subject index. No embeddings or graph search here.
 // Memory IDs must have been verified in the authoritative fact ledger first.
 define isolated actor MemoryIndexActor as
-  // All persistent actor-owned fields are in this one state schema.
   state {
     memory_ids: Array<String> = new Array<String>();
     subjects: Array<String> = new Array<String>();
@@ -10,9 +9,8 @@ define isolated actor MemoryIndexActor as
     revisions: Array<String> = new Array<String>();
   }
 
-
   pub link(String memory_id, String subject, String repo,
-               String branch, String revision): bool {
+               String branch, String revision): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if memory_id == "" || subject == "" || repo == "" || branch == "" ||
          revision == "" || s.memory_ids.size >= 4096; then return false; fi
@@ -35,8 +33,8 @@ define isolated actor MemoryIndexActor as
   // Returned IDs are candidates. The retrieval actor MUST re-check live
   // verification/supersession and scope before using any result.
   pub find(String subject, String repo, String branch,
-               String revision, int limit): Result<Array<String>, String> {
-    return self.handle_state(critical |s| -> {
+               String revision, int limit): Result<Array<String>, String> with state.read {
+    return self.handle_state(|s| -> {
       if subject == "" || repo == "" || branch == "" || revision == "" ||
          limit < 1 || limit > 32; then return Err("invalid lookup"); fi
       let mut Array<String> results = new Array<String>();
@@ -53,8 +51,8 @@ define isolated actor MemoryIndexActor as
     });
   }
 
-  pub size(): int {
-    return self.handle_state(critical |s| -> {
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.memory_ids.size;
     });
   }

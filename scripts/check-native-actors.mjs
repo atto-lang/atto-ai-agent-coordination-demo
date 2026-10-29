@@ -20,6 +20,24 @@ function listActors(base, dir, minimum) {
     fail('missing or nonregular Oreslang source: ' + dir);
   return entries.map(x => dir + '/' + x.name).sort();
 }
+
+// Fail closed if future actor directories introduce source that the pinned
+// native gate would silently omit. No symlinked actor paths are accepted.
+function assertCompleteActorCoverage(base, listed) {
+  const allowed = new Set(listed);
+  const stack = ['src'];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const entry of readdirSync(join(base, dir), { withFileTypes: true })) {
+      const path = dir + '/' + entry.name;
+      if (entry.isSymbolicLink()) fail('symlink in actor source tree: ' + path);
+      if (entry.isDirectory()) { stack.push(path); continue; }
+      if (entry.name.endsWith('.ores') && (!entry.isFile() || !allowed.has(path)))
+        fail('unlisted native actor source: ' + path);
+    }
+  }
+}
+
 function fail(reason, code=2) {
   console.error('NATIVE_CHECK_UNVERIFIED ' + reason);
   process.exit(code);
@@ -50,6 +68,7 @@ const actorPaths = [];
 for (const [dir, minimum] of Object.entries(actorDirs))
   actorPaths.push(...listActors(base, dir, minimum));
 if (actorPaths.length < 20) fail('incomplete actor source manifest');
+assertCompleteActorCoverage(base, actorPaths);
 const files = [...actorPaths, ...requiredGuestPaths].sort();
 if (new Set(files).size !== files.length) fail('duplicate native source path');
 const outcomes = [];

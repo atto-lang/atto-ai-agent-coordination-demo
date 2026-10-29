@@ -2,7 +2,6 @@
 // Proof of authentication, trusted CI, reviewer identity and GitHub policy
 // MUST be performed by an authorized caller, not inferred from booleans here.
 define isolated actor DecisionGateActor as
-  // Sole guest-owned persistent state; no ordinary actor instance fields.
   state {
     subject_id: String = "";
     exact_revision: String = "";
@@ -13,8 +12,7 @@ define isolated actor DecisionGateActor as
     closed: bool = true;
   }
 
-
-  pub begin(String subject, String revision): bool {
+  pub begin(String subject, String revision): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if subject == "" || revision == ""; then return false; fi
       if s.epoch >= 2147483646; then return false; fi
@@ -31,7 +29,7 @@ define isolated actor DecisionGateActor as
 
   pub record_executed_check(String revision, int epoch,
                                 int executed_steps, bool passed,
-                                bool trusted_origin): bool {
+                                bool trusted_origin): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if s.closed || epoch != s.epoch ||
          revision != s.exact_revision; then return false; fi
@@ -42,7 +40,7 @@ define isolated actor DecisionGateActor as
   }
 
   pub record_review(String revision, int epoch,
-                        bool independently_approved): bool {
+                        bool independently_approved): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if s.closed || epoch != s.epoch ||
          revision != s.exact_revision; then return false; fi
@@ -51,26 +49,27 @@ define isolated actor DecisionGateActor as
     });
   }
 
-  pub can_commit(String revision, int epoch): bool {
-    return self.handle_state(critical |s| -> {
+  pub can_commit(String revision, int epoch): bool with state.read {
+    return self.handle_state(|s| -> {
       return !s.closed && revision == s.exact_revision &&
         epoch == s.epoch && s.admission_verified &&
         s.checks_passed && s.independent_approval;
     });
   }
 
-  pub invalidate(): void {
-    return self.handle_state(critical |s| -> {
+  pub invalidate(): void with state.write {
+    self.handle_state(critical |s| -> {
       s.closed = true;
       s.checks_passed = false;
       s.independent_approval = false;
       s.admission_verified = false;
       return;
     });
+    return;
   }
 
-  pub current_epoch(): int {
-    return self.handle_state(critical |s| -> {
+  pub current_epoch(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.epoch;
     });
   }

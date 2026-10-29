@@ -2,7 +2,6 @@
 // This ledger is NOT a WAL or durable outbox. After dispatch, an unknown
 // outcome must be reconciled externally; never silently execute it again.
 define isolated actor WorkflowEffectLedgerActor as
-  // Sole actor-owned persistent state schema.
   state {
     effect_keys: Array<String> = new Array<String>();
     workflow_ids: Array<String> = new Array<String>();
@@ -13,11 +12,10 @@ define isolated actor WorkflowEffectLedgerActor as
     transition_epoch: int = 0;
   }
 
-
   // State 0 prepared, 1 dispatched/unknown, 2 externally confirmed,
   // 3 cancelled before dispatch, 4 externally proved not applied.
   pub prepare(String workflow_id, String exact_revision,
-                  String effect_key, String correlation_id): bool {
+                  String effect_key, String correlation_id): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if workflow_id == "" || exact_revision == "" ||
          effect_key == "" || correlation_id == "" ||
@@ -40,7 +38,7 @@ define isolated actor WorkflowEffectLedgerActor as
   // The adapter must persist the prepared command and its idempotency key
   // before issuing the external side effect. Dispatch yields UNKNOWN.
   pub dispatch(String effect_key, String exact_revision,
-                   int expected_epoch): bool {
+                   int expected_epoch): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if expected_epoch != s.transition_epoch ||
          s.transition_epoch >= 2147483646; then return false; fi
@@ -62,7 +60,7 @@ define isolated actor WorkflowEffectLedgerActor as
   // definitive reconciliation, never solely from a model assertion.
   pub reconcile(String effect_key, String exact_revision,
                     int expected_epoch, String receipt,
-                    bool applied): bool {
+                    bool applied): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if receipt == "" || expected_epoch != s.transition_epoch ||
          s.transition_epoch >= 2147483646; then return false; fi
@@ -87,7 +85,7 @@ define isolated actor WorkflowEffectLedgerActor as
 
   // Never cancel an already-dispatched (uncertain) effect.
   pub cancel_prepared(String effect_key, String exact_revision,
-                         int expected_epoch): bool {
+                         int expected_epoch): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if expected_epoch != s.transition_epoch ||
          s.transition_epoch >= 2147483646; then return false; fi
@@ -105,8 +103,8 @@ define isolated actor WorkflowEffectLedgerActor as
     });
   }
 
-  pub state_of(String effect_key, String exact_revision): Result<int, String> {
-    return self.handle_state(critical |s| -> {
+  pub state_of(String effect_key, String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.effect_keys) {
         if existing == effect_key; then
@@ -121,8 +119,8 @@ define isolated actor WorkflowEffectLedgerActor as
     });
   }
 
-  pub epoch(): int {
-    return self.handle_state(critical |s| -> {
+  pub epoch(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.transition_epoch;
     });
   }

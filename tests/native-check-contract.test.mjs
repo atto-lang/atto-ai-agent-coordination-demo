@@ -7,6 +7,9 @@ const source = readFileSync(runner, 'utf8');
 test('checks all actor sources, both guests and negative type fixture', () => {
   for (const fragment of ["'src': 8", "'src/memory': 9", "'src/runtime': 3", "'tests/guest/agent_pipeline.ores'", "'tests/guest/direct_agent_hop.ores'"]) assert.ok(source.includes(fragment), fragment);
   assert.match(source, /readdirSync/);
+  assert.match(source, /assertCompleteActorCoverage\(base, actorPaths\)/);
+  assert.match(source, /unlisted native actor source/);
+  assert.match(source, /symlink in actor source tree/);
   assert.match(source, /source_sha256/);
   assert.match(source, /manifest:files/);
 

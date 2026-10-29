@@ -2,7 +2,6 @@
 // Do not confuse this with an authenticated transport or a lease service.
 // Re-registration is rejected; supervisor issues a new incarnation identity.
 define isolated actor AgentRegistryActor as
-  // Sole guest-owned persistent state; no ordinary actor instance fields.
   state {
     identities: Array<String> = new Array<String>();
     capabilities: Array<String> = new Array<String>();
@@ -10,8 +9,7 @@ define isolated actor AgentRegistryActor as
     revision: int = 0;
   }
 
-
-  pub register(String id, String capability, int incarnation): bool {
+  pub register(String id, String capability, int incarnation): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if id == "" || capability == "" || incarnation <= 0 ||
          s.identities.size >= 1024; then return false; fi
@@ -27,8 +25,8 @@ define isolated actor AgentRegistryActor as
   }
 
   pub supports(String id, int incarnation,
-                   String capability): bool {
-    return self.handle_state(critical |s| -> {
+                   String capability): bool with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.identities) {
         if existing == id && s.incarnations[i] == incarnation &&
@@ -39,8 +37,8 @@ define isolated actor AgentRegistryActor as
     });
   }
 
-  pub current_revision(): int {
-    return self.handle_state(critical |s| -> {
+  pub current_revision(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.revision;
     });
   }

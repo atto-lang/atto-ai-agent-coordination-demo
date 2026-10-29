@@ -2,7 +2,6 @@
 // Single graph ownership prevents switching away and later rolling back its revision.
 // Expired slots are reused, but no wall-clock, persistence or eviction policy is implied.
 define isolated actor KnowledgeCacheActor as
-  // Sole guest-owned persistent state; no ordinary actor instance fields.
   state {
     graph_id: String = "";
     graph_revision: int = -1;
@@ -11,8 +10,7 @@ define isolated actor KnowledgeCacheActor as
     expires_at: Array<int> = new Array<int>();
   }
 
-
-  pub activate(String id, int revision): bool {
+  pub activate(String id, int revision): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if id == "" || revision < 0; then return false; fi
       if s.graph_id != "" && id != s.graph_id; then return false; fi
@@ -27,11 +25,11 @@ define isolated actor KnowledgeCacheActor as
   }
 
   pub put(String id, int revision, String key,
-              String payload, int expiry, int now): bool {
+              String payload, int expiry, int now): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if id != s.graph_id || revision != s.graph_revision ||
          key == "" || expiry <= now; then return false; fi
-  
+      
       // Reuse the same expired key preferentially, otherwise the first
       // expired slot. An old expired entry must not mask a new value on get.
       let int reusable = -1;
@@ -62,8 +60,8 @@ define isolated actor KnowledgeCacheActor as
   }
 
   pub get(String id, int revision, String key,
-              int now): Result<String, String> {
-    return self.handle_state(critical |s| -> {
+              int now): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
       if id != s.graph_id || revision != s.graph_revision; then
         return Err("cache revision mismatch");
       fi
@@ -79,13 +77,13 @@ define isolated actor KnowledgeCacheActor as
     });
   }
 
-  pub entries(): int {
-    return self.handle_state(critical |s| -> {
+  pub entries(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.keys.size;
     });
   }
-  pub revision(): int {
-    return self.handle_state(critical |s| -> {
+  pub revision(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.graph_revision;
     });
   }

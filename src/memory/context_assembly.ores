@@ -2,7 +2,6 @@
 // Token counts are caller-provided estimates; this is NOT a tokenizer or
 // security boundary for prompt injection. All excerpts are untrusted data.
 define isolated actor ContextAssemblyActor as
-  // All persistent actor-owned fields are in this one state schema.
   state {
     task_id: String = "";
     revision: String = "";
@@ -15,9 +14,8 @@ define isolated actor ContextAssemblyActor as
     evidence_refs: Array<String> = new Array<String>();
   }
 
-
   pub begin(String task, String exact_revision,
-                int token_budget): bool {
+                int token_budget): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if s.started || task == "" || exact_revision == "" ||
          token_budget < 1 || token_budget > 16384; then return false; fi
@@ -32,7 +30,7 @@ define isolated actor ContextAssemblyActor as
 
   pub add(String task, String exact_revision, String memory_id,
               String evidence_ref, String excerpt,
-              int estimated_tokens): bool {
+              int estimated_tokens): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if !s.started || s.sealed || task != s.task_id ||
          exact_revision != s.revision || memory_id == "" ||
@@ -50,7 +48,7 @@ define isolated actor ContextAssemblyActor as
     });
   }
 
-  pub seal(String task, String exact_revision): bool {
+  pub seal(String task, String exact_revision): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if !s.started || s.sealed || task != s.task_id ||
          exact_revision != s.revision; then return false; fi
@@ -61,8 +59,8 @@ define isolated actor ContextAssemblyActor as
 
   // Return separate arrays, not a trusted system prompt. The caller is
   // responsible for labeling evidence and applying a real tokenizer.
-  pub selected_ids(String task, String exact_revision): Result<Array<String>, String> {
-    return self.handle_state(critical |s| -> {
+  pub selected_ids(String task, String exact_revision): Result<Array<String>, String> with state.read {
+    return self.handle_state(|s| -> {
       if !s.sealed || task != s.task_id ||
          exact_revision != s.revision; then return Err("context not sealed"); fi
       let mut Array<String> copy = new Array<String>();
@@ -72,8 +70,8 @@ define isolated actor ContextAssemblyActor as
   }
 
   pub selected_excerpts(String task,
-                            String exact_revision): Result<Array<String>, String> {
-    return self.handle_state(critical |s| -> {
+                            String exact_revision): Result<Array<String>, String> with state.read {
+    return self.handle_state(|s| -> {
       if !s.sealed || task != s.task_id ||
          exact_revision != s.revision; then return Err("context not sealed"); fi
       let mut Array<String> copy = new Array<String>();
@@ -83,8 +81,8 @@ define isolated actor ContextAssemblyActor as
   }
 
   pub selected_evidence(String task,
-                            String exact_revision): Result<Array<String>, String> {
-    return self.handle_state(critical |s| -> {
+                            String exact_revision): Result<Array<String>, String> with state.read {
+    return self.handle_state(|s| -> {
       if !s.sealed || task != s.task_id ||
          exact_revision != s.revision; then return Err("context not sealed"); fi
       let mut Array<String> copy = new Array<String>();
@@ -93,8 +91,8 @@ define isolated actor ContextAssemblyActor as
     });
   }
 
-  pub remaining_budget(): int {
-    return self.handle_state(critical |s| -> {
+  pub remaining_budget(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.remaining;
     });
   }

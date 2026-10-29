@@ -3,7 +3,6 @@
 // A trusted storage adapter must durably write/checksum a snapshot BEFORE
 // recording this manifest and must verify the blob again during restoration.
 define isolated actor MemoryCheckpointManifestActor as
-  // All persistent actor-owned fields are in this one state schema.
   state {
     shard_id: String = "";
     revision: String = "";
@@ -13,10 +12,9 @@ define isolated actor MemoryCheckpointManifestActor as
     manifest_generation: int = 0;
   }
 
-
   pub record(String shard, String exact_revision,
                  String storage_location, String content_checksum,
-                 int last_applied_event): bool {
+                 int last_applied_event): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if shard == "" || exact_revision == "" ||
          storage_location == "" || content_checksum == "" ||
@@ -36,8 +34,8 @@ define isolated actor MemoryCheckpointManifestActor as
 
   pub locate(String shard, String exact_revision,
                  int event_sequence,
-                 String checksum_expected): Result<String, String> {
-    return self.handle_state(critical |s| -> {
+                 String checksum_expected): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
       if shard != s.shard_id || exact_revision != s.revision ||
          checksum_expected != s.checksum ||
          event_sequence != s.last_event_sequence ||
@@ -48,13 +46,13 @@ define isolated actor MemoryCheckpointManifestActor as
     });
   }
 
-  pub event_sequence(): int {
-    return self.handle_state(critical |s| -> {
+  pub event_sequence(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.last_event_sequence;
     });
   }
-  pub generation(): int {
-    return self.handle_state(critical |s| -> {
+  pub generation(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.manifest_generation;
     });
   }

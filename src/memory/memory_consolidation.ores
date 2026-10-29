@@ -2,7 +2,6 @@
 // A verifier must approve canonical memory IDs before they are registered.
 // Reject chains and cycles: a canonical may never later become an alias.
 define isolated actor MemoryConsolidationActor as
-  // All persistent actor-owned fields are in this one state schema.
   state {
     aliases: Array<String> = new Array<String>();
     canonicals: Array<String> = new Array<String>();
@@ -11,10 +10,9 @@ define isolated actor MemoryConsolidationActor as
     revisions: Array<String> = new Array<String>();
   }
 
-
   pub link_duplicate(String alias_id, String canonical_id,
                          String repo, String branch,
-                         String revision): bool {
+                         String revision): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if alias_id == "" || canonical_id == "" || alias_id == canonical_id ||
          repo == "" || branch == "" || revision == "" ||
@@ -38,8 +36,8 @@ define isolated actor MemoryConsolidationActor as
   }
 
   pub resolve(String id, String repo, String branch,
-                  String revision): Result<String, String> {
-    return self.handle_state(critical |s| -> {
+                  String revision): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
       if id == "" || repo == "" || branch == "" || revision == ""; then
         return Err("invalid memory scope");
       fi
@@ -56,8 +54,8 @@ define isolated actor MemoryConsolidationActor as
     });
   }
 
-  pub size(): int {
-    return self.handle_state(critical |s| -> {
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.aliases.size;
     });
   }

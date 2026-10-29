@@ -1,7 +1,6 @@
 // Bounded capture of immutable event envelopes. Provenance is an untrusted
 // claim until an external trusted adapter has verified it. No network I/O.
 define isolated actor MemoryIngestionActor as
-  // All persistent actor-owned fields are in this one state schema.
   state {
     event_ids: Array<String> = new Array<String>();
     repositories: Array<String> = new Array<String>();
@@ -12,12 +11,11 @@ define isolated actor MemoryIngestionActor as
     acknowledged: Array<bool> = new Array<bool>();
   }
 
-
   // kind: 1 Git, 2 CI, 3 agent observation, 4 documentation.
   // Tickets are 1-based and never recycled within an incarnation.
   pub ingest(String event_id, String repo, String revision,
                  String source_ref, String digest,
-                 int kind): Result<int, String> {
+                 int kind): Result<int, String> with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if event_id == "" || repo == "" || revision == "" ||
          source_ref == "" || digest == "" || kind < 1 || kind > 4; then
@@ -41,7 +39,7 @@ define isolated actor MemoryIngestionActor as
   // The caller must not acknowledge before the downstream append is durable.
   // This local flag is NOT a transactional outbox or delivery guarantee.
   pub acknowledge(int ticket, String event_id,
-                      String digest): bool {
+                      String digest): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if ticket <= 0 || ticket > s.event_ids.size; then return false; fi
       val int index = ticket - 1;
@@ -53,16 +51,16 @@ define isolated actor MemoryIngestionActor as
     });
   }
 
-  pub pending(int ticket, String event_id): bool {
-    return self.handle_state(critical |s| -> {
+  pub pending(int ticket, String event_id): bool with state.read {
+    return self.handle_state(|s| -> {
       if ticket <= 0 || ticket > s.event_ids.size; then return false; fi
       val int index = ticket - 1;
       return s.event_ids[index] == event_id && !s.acknowledged[index];
     });
   }
 
-  pub size(): int {
-    return self.handle_state(critical |s| -> {
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.event_ids.size;
     });
   }

@@ -53,6 +53,7 @@ test('verification resolves a candidate only once and keeps superseded facts', (
   mustContain('memory_verification', [
     's.memory_ids.size >= 2048',
     's.states[i] != 0',
+    'replacement_ticket <= old_ticket',
     's.states[a] != 1 || s.states[b] != 1',
     's.states[a] = 3',
     's.states[i] != 1'
@@ -106,4 +107,30 @@ test('checkpoint manifest records monotonic external storage pointers only', () 
     'checksum_expected != s.checksum',
     'event_sequence != s.last_event_sequence'
   ]);
+});
+
+import { auditActorSource } from '../scripts/actor-state-audit.mjs';
+for (const [file] of modules) {
+  test(file + ' has one state schema, scoped loans and critical writes', () => {
+    const check = auditActorSource(source(file));
+    assert.deepEqual(check.problems, [], JSON.stringify(check));
+    assert.ok(check.writes > 0);
+  });
+}
+
+
+test('supersession is forward-only and rejects reverse ticket transitions', () => {
+  const text = source('memory_verification');
+  const start = text.indexOf('pub supersede(');
+  const end = text.indexOf('\n  pub verified_content(', start);
+  assert.ok(start >= 0 && end > start);
+  const body = text.slice(start, end);
+  assert.match(body, /replacement_ticket <= old_ticket/);
+  assert.match(body, /s\.states\[a\] != 1 \|\| s\.states\[b\] != 1/);
+  assert.match(body, /s\.repositories\[a\] != s\.repositories\[b\]/);
+  assert.match(body, /s\.branches\[a\] != s\.branches\[b\]/);
+  assert.match(body, /s\.subjects\[a\] != s\.subjects\[b\]/);
+  assert.match(body, /self\.handle_state\(critical \|s\| -> \{/);
+  assert.ok(body.indexOf('replacement_ticket <= old_ticket') <
+    body.indexOf('s.states[a] = 3'), 'reject rollback before mutation');
 });

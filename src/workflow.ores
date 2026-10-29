@@ -3,7 +3,6 @@
 // Stage values: 0 idle; 1 planned; 2 approved; 3 running; 4 completed;
 // 5 cancelled. Terminal stages never restart under the same identity.
 define isolated actor AgentWorkflowActor as
-  // Sole guest-owned persistent state; no ordinary actor instance fields.
   state {
     workflow_id: String = "";
     revision: String = "";
@@ -11,8 +10,7 @@ define isolated actor AgentWorkflowActor as
     transition_number: int = 0;
   }
 
-
-  pub start(String id, String exact_revision): bool {
+  pub start(String id, String exact_revision): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if s.phase != 0 || id == "" || exact_revision == ""; then
         return false;
@@ -26,7 +24,7 @@ define isolated actor AgentWorkflowActor as
   }
 
   pub advance(String id, String exact_revision,
-                  int expected_transition, int next_phase): bool {
+                  int expected_transition, int next_phase): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if id != s.workflow_id || exact_revision != s.revision ||
          expected_transition != s.transition_number; then
@@ -42,7 +40,7 @@ define isolated actor AgentWorkflowActor as
     });
   }
 
-  pub cancel(String id, int expected_transition): bool {
+  pub cancel(String id, int expected_transition): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if id != s.workflow_id || expected_transition != s.transition_number ||
          s.phase < 1 || s.phase >= 4; then return false; fi
@@ -52,13 +50,13 @@ define isolated actor AgentWorkflowActor as
     });
   }
 
-  pub stage(): int {
-    return self.handle_state(critical |s| -> {
+  pub stage(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.phase;
     });
   }
-  pub revision_number(): int {
-    return self.handle_state(critical |s| -> {
+  pub revision_number(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.transition_number;
     });
   }

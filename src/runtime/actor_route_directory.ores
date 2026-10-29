@@ -2,7 +2,6 @@
 // A name is stable across relocations; its physical placement is not.
 // This actor is NOT a transport, authorization service, or durable registry.
 define isolated actor ActorRouteDirectoryActor as
-  // Sole actor-owned persistent state schema.
   state {
     actor_ids: Array<String> = new Array<String>();
     incarnations: Array<int> = new Array<int>();
@@ -12,9 +11,8 @@ define isolated actor ActorRouteDirectoryActor as
     active: Array<bool> = new Array<bool>();
   }
 
-
   pub register(String actor_id, int incarnation,
-                   int generation, String placement): bool {
+                   int generation, String placement): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if actor_id == "" || placement == "" ||
          incarnation < 1 || generation < 1 ||
@@ -36,7 +34,7 @@ define isolated actor ActorRouteDirectoryActor as
   // revalidate this token to reject in-flight stale traffic.
   pub relocate(String actor_id, int expected_incarnation,
                    int expected_epoch, int next_incarnation,
-                   int next_generation, String next_placement): bool {
+                   int next_generation, String next_placement): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if actor_id == "" || next_placement == "" ||
          next_incarnation <= expected_incarnation ||
@@ -48,6 +46,8 @@ define isolated actor ActorRouteDirectoryActor as
           if !s.active[i] ||
              s.incarnations[i] != expected_incarnation ||
              s.route_epochs[i] != expected_epoch ||
+             next_generation <= s.generations[i] ||
+             next_generation >= 2147483646 ||
              s.route_epochs[i] >= 2147483646; then
             return false;
           fi
@@ -65,8 +65,8 @@ define isolated actor ActorRouteDirectoryActor as
 
   // A caller may resolve only the exact identity token it was issued.
   pub resolve(String actor_id, int incarnation,
-                  int generation, int epoch): Result<String, String> {
-    return self.handle_state(critical |s| -> {
+                  int generation, int epoch): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.actor_ids) {
         if existing == actor_id; then
@@ -84,7 +84,7 @@ define isolated actor ActorRouteDirectoryActor as
   }
 
   pub retire(String actor_id, int incarnation,
-                 int epoch): bool {
+                 int epoch): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       let int i = 0;
       for (const existing of s.actor_ids) {
@@ -100,8 +100,8 @@ define isolated actor ActorRouteDirectoryActor as
     });
   }
 
-  pub route_epoch(String actor_id): Result<int, String> {
-    return self.handle_state(critical |s| -> {
+  pub route_epoch(String actor_id): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.actor_ids) {
         if existing == actor_id; then
@@ -113,8 +113,8 @@ define isolated actor ActorRouteDirectoryActor as
       return Err("unknown actor");
     });
   }
-  pub size(): int {
-    return self.handle_state(critical |s| -> {
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.actor_ids.size;
     });
   }

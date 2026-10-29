@@ -2,7 +2,6 @@
 // Caller must independently authenticate source, origin, and content hashes.
 // A receipt records claims; it does not itself prove their truth.
 define isolated actor EvidenceLedgerActor as
-  // Sole guest-owned persistent state; no ordinary actor instance fields.
   state {
     receipt_ids: Array<String> = new Array<String>();
     subjects: Array<String> = new Array<String>();
@@ -12,9 +11,8 @@ define isolated actor EvidenceLedgerActor as
     successful: Array<bool> = new Array<bool>();
   }
 
-
   pub append(String receipt, String subject, String revision,
-                 String digest, int steps, bool passed): bool {
+                 String digest, int steps, bool passed): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if receipt == "" || subject == "" || revision == "" || digest == "" ||
          steps <= 0 || s.receipt_ids.size >= 2048; then return false; fi
@@ -32,8 +30,8 @@ define isolated actor EvidenceLedgerActor as
   }
 
   pub has_success(String subject, String revision,
-                      String digest): bool {
-    return self.handle_state(critical |s| -> {
+                      String digest): bool with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.subjects) {
         if existing == subject && s.revisions[i] == revision &&
@@ -47,8 +45,8 @@ define isolated actor EvidenceLedgerActor as
     });
   }
 
-  pub receipt_count(): int {
-    return self.handle_state(critical |s| -> {
+  pub receipt_count(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.receipt_ids.size;
     });
   }

@@ -27,6 +27,8 @@ test('routing is identity and route-epoch pinned', () => {
     's.incarnations[i] != expected_incarnation',
     's.route_epochs[i] != expected_epoch',
     'next_incarnation <= expected_incarnation',
+    'next_generation <= s.generations[i]',
+    'next_generation >= 2147483646',
     's.incarnations[i] != incarnation',
     's.generations[i] != generation',
     's.route_epochs[i] != epoch',
@@ -41,7 +43,7 @@ test('graph supports dependency fan-in with CAS and fail-closed states', () => {
     's.dependents.size >= 512',
     'prerequisite_pos >= node_pos',
     'if s.sealed || node == prerequisite',
-    'if !all_prerequisites_done; then return false; fi',
+    'if !found; then dependencies_met = false; fi',
     'expected_revision != s.revision',
     's.node_states[i] == 1',
     's.node_states[i] = 3',
@@ -61,4 +63,25 @@ test('dispatched effects remain unknown until reconciliation', () => {
     'receipt == ""',
     'expected_epoch != s.transition_epoch'
   ]) assert.ok(s.includes(x), x);
+});
+
+import { auditActorSource } from '../scripts/actor-state-audit.mjs';
+for (const [file] of actorInfo) {
+  test(file + ' uses sealed state loans and critical mutation', () => {
+    const result = auditActorSource(read(file));
+    assert.deepEqual(result.problems, [], JSON.stringify(result));
+    assert.ok(result.writes > 0);
+  });
+}
+
+test('graph start checks every dependency under the same critical state loan before dispatch', () => {
+  const src = read('execution_graph');
+  const start = src.slice(src.indexOf('  pub start('), src.indexOf('  pub settle('));
+  const settle = src.slice(src.indexOf('  pub settle('), src.indexOf('  pub cancel_pending('));
+  assert.match(start, /self\.handle_state\(critical \|s\| -> \{/);
+  assert.match(start, /if !dependencies_met; then return false; fi/);
+  assert.ok(start.indexOf('if !dependencies_met; then return false; fi') <
+    start.indexOf('s.node_states[i] = 1'), 'dependency gate must precede dispatch');
+  assert.doesNotMatch(settle, /dependencies_met/);
+  assert.match(settle, /s.node_states\[i\] = 2/);
 });

@@ -2,7 +2,6 @@
 // No graph node is a separate scheduled actor. Returned arrays are new copies.
 // Authoritative cross-shard consistency belongs to a higher-level coordinator.
 define isolated actor KnowledgeGraphActor as
-  // Sole guest-owned persistent state; no ordinary actor instance fields.
   state {
     ids: Array<String> = new Array<String>();
     labels: Array<String> = new Array<String>();
@@ -12,8 +11,7 @@ define isolated actor KnowledgeGraphActor as
     revision: int = 0;
   }
 
-
-  pub add_entity(String id, String label): bool {
+  pub add_entity(String id, String label): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if id == "" || s.ids.size >= 4096; then return false; fi
       for (const existing of s.ids) {
@@ -26,8 +24,8 @@ define isolated actor KnowledgeGraphActor as
     });
   }
 
-  pub contains(String id): bool {
-    return self.handle_state(critical |s| -> {
+  pub contains(String id): bool with state.read {
+    return self.handle_state(|s| -> {
       for (const existing of s.ids) {
         if existing == id; then return true; fi
       }
@@ -35,8 +33,8 @@ define isolated actor KnowledgeGraphActor as
     });
   }
 
-  pub label_of(String id): Result<String, String> {
-    return self.handle_state(critical |s| -> {
+  pub label_of(String id): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.ids) {
         if existing == id; then return Ok(s.labels[i]); fi
@@ -46,16 +44,16 @@ define isolated actor KnowledgeGraphActor as
     });
   }
 
-  pub add_edge(String source, String target, String kind): bool {
+  pub add_edge(String source, String target, String kind): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if kind == "" || s.edge_from.size >= 16384; then return false; fi
-      let bool has_source = false;
-      let bool has_target = false;
-      for (const known_id of s.ids) {
-        if known_id == source; then has_source = true; fi
-        if known_id == target; then has_target = true; fi
+      let bool source_known = false;
+      let bool target_known = false;
+      for (const existing of s.ids) {
+        if existing == source; then source_known = true; fi
+        if existing == target; then target_known = true; fi
       }
-      if !has_source || !has_target; then return false; fi
+      if !source_known || !target_known; then return false; fi
       let int i = 0;
       for (const existing of s.edge_from) {
         if existing == source && s.edge_to[i] == target &&
@@ -70,8 +68,8 @@ define isolated actor KnowledgeGraphActor as
     });
   }
 
-  pub neighbors(String source, String kind): Array<String> {
-    return self.handle_state(critical |s| -> {
+  pub neighbors(String source, String kind): Array<String> with state.read {
+    return self.handle_state(|s| -> {
       let mut Array<String> result = new Array<String>();
       let int i = 0;
       for (const from of s.edge_from) {
@@ -84,18 +82,18 @@ define isolated actor KnowledgeGraphActor as
     });
   }
 
-  pub entity_count(): int {
-    return self.handle_state(critical |s| -> {
+  pub entity_count(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.ids.size;
     });
   }
-  pub edge_count(): int {
-    return self.handle_state(critical |s| -> {
+  pub edge_count(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.edge_from.size;
     });
   }
-  pub current_revision(): int {
-    return self.handle_state(critical |s| -> {
+  pub current_revision(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.revision;
     });
   }

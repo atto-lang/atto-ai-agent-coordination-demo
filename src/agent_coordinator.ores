@@ -2,7 +2,6 @@
 // This actor owns tickets; it does not pretend to provide network delivery.
 // A production dispatcher must bind task leases to authenticated workers.
 define isolated actor AgentCoordinatorActor as
-  // Sole guest-owned persistent state; no ordinary actor instance fields.
   state {
     task_keys: Array<String> = new Array<String>();
     owners: Array<String> = new Array<String>();
@@ -11,9 +10,8 @@ define isolated actor AgentCoordinatorActor as
     active_count: int = 0;
   }
 
-
   // State: 0 = queued; 1 = completed; 2 = cancelled.
-  pub submit(String task_key, String owner): Result<int, String> {
+  pub submit(String task_key, String owner): Result<int, String> with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if task_key == "" || owner == ""; then return Err("empty key/owner"); fi
       if s.active_count >= 64 || s.task_keys.size >= 4096 ||
@@ -35,7 +33,7 @@ define isolated actor AgentCoordinatorActor as
     });
   }
 
-  pub settle(int ticket, String owner, bool cancelled): bool {
+  pub settle(int ticket, String owner, bool cancelled): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if ticket <= 0 || ticket >= s.next_ticket; then return false; fi
       val int i = ticket - 1;
@@ -51,8 +49,8 @@ define isolated actor AgentCoordinatorActor as
     });
   }
 
-  pub state_of(int ticket): Result<int, String> {
-    return self.handle_state(critical |s| -> {
+  pub state_of(int ticket): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
       if ticket <= 0 || ticket >= s.next_ticket; then
         return Err("unknown ticket");
       fi
@@ -60,8 +58,8 @@ define isolated actor AgentCoordinatorActor as
     });
   }
 
-  pub pending_count(): int {
-    return self.handle_state(critical |s| -> {
+  pub pending_count(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.active_count;
     });
   }

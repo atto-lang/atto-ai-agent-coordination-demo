@@ -1,7 +1,6 @@
 // One in-memory head pointer per repository + branch, with optimistic CAS.
 // This protects against stale HEAD reads, not against stale historical facts.
 define isolated actor MemoryInvalidationActor as
-  // All persistent actor-owned fields are in this one state schema.
   state {
     repositories: Array<String> = new Array<String>();
     branches: Array<String> = new Array<String>();
@@ -9,9 +8,8 @@ define isolated actor MemoryInvalidationActor as
     generations: Array<int> = new Array<int>();
   }
 
-
   pub register(String repo, String branch,
-                   String revision): Result<int, String> {
+                   String revision): Result<int, String> with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if repo == "" || branch == "" || revision == ""; then
         return Err("invalid scope");
@@ -33,7 +31,7 @@ define isolated actor MemoryInvalidationActor as
   }
 
   pub advance(String repo, String branch, String expected_revision,
-                  String new_revision, int expected_generation): Result<int, String> {
+                  String new_revision, int expected_generation): Result<int, String> with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if new_revision == "" || expected_revision == new_revision; then
         return Err("invalid head transition");
@@ -57,8 +55,8 @@ define isolated actor MemoryInvalidationActor as
   }
 
   pub is_current(String repo, String branch,
-                     String revision, int generation): bool {
-    return self.handle_state(critical |s| -> {
+                     String revision, int generation): bool with state.read {
+    return self.handle_state(|s| -> {
       let int i = 0;
       for (const existing of s.repositories) {
         if existing == repo && s.branches[i] == branch; then
@@ -71,8 +69,8 @@ define isolated actor MemoryInvalidationActor as
     });
   }
 
-  pub scope_count(): int {
-    return self.handle_state(critical |s| -> {
+  pub scope_count(): int with state.read {
+    return self.handle_state(|s| -> {
       return s.repositories.size;
     });
   }
