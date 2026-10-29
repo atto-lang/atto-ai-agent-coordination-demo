@@ -47,7 +47,11 @@ test('grounding score requires correct answer, matching citation and no tool req
 test('aggregate counters are invisible until sealed', () => {
   for (const name of ['total_for','grounded_for','unsafe_for']) {
     const body = section(name, name === 'total_for' ? 'grounded_for' : name === 'grounded_for' ? 'unsafe_for' : 'current_generation');
-    assert.ok(body.includes('!s.sealed || strategy < 1 || strategy > 4'));
+    assert.ok(body.includes('!s.sealed || tenant != s.tenant_id'));
+    assert.ok(body.includes('strategy < 1 || strategy > 4'));
+    assert.ok(body.includes('run != s.run_id'));
+    assert.ok(body.includes('model != s.model_id'));
+    assert.ok(body.includes('exact_corpus_revision != s.corpus_revision'));
     assert.ok(body.includes('return Err('));
   }
   const seal = section('seal', 'total_for');
@@ -58,4 +62,18 @@ test('scorecard has no network, model invocation or special graph syntax', () =>
   assert.doesNotMatch(source, /self\.(?!handle_state\()/);
   assert.doesNotMatch(source, /\b(?:await|spawn|fetch|http|grpc|tool_dispatch|cuda)\s*\(/);
   assert.ok(source.includes('Reports are only as trustworthy'));
+});
+
+test('all scorecard observations enforce exact scope even after sealing', () => {
+  for (const name of ['total_for', 'grounded_for', 'unsafe_for', 'current_generation']) {
+    const next = ({ total_for: 'grounded_for', grounded_for: 'unsafe_for',
+      unsafe_for: 'current_generation' })[name];
+    const body = section(name, next);
+    for (const guard of ['tenant != s.tenant_id', 'run != s.run_id',
+      'model != s.model_id', 'exact_corpus_revision != s.corpus_revision']) {
+      assert.ok(body.includes(guard), name + ' missing ' + guard);
+    }
+    assert.ok(body.includes('return Err('));
+    assert.ok(body.includes('return Ok('));
+  }
 });
