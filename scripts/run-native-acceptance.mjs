@@ -15,6 +15,7 @@ const compiler = process.env.ORESLANG_COMPILER_SHA ?? '';
 const sha256 = path => createHash('sha256').update(readFileSync(join(demo,path))).digest('hex');
 const guests = ['agent_pipeline','direct_agent_hop','step_agent_flow'];
 const guestPaths = guests.map(name => 'tests/guest/' + name + '.ores');
+const storageContractPaths = ['contracts/native/workflow_storage.ores'];
 const actorDirs = [['src',8],['src/memory',9],['src/runtime',6]];
 function fail(message) {
   console.error('NATIVE_ACCEPTANCE_UNVERIFIED ' + message);
@@ -39,7 +40,7 @@ function sourceManifest() {
       fail('actor manifest incomplete or not regular files');
     actorPaths.push(...names.map(e=>directory+'/'+e.name));
   }
-  const paths=[...actorPaths,...guestPaths].sort();
+  const paths=[...actorPaths,...guestPaths,...storageContractPaths].sort();
   if(new Set(paths).size!==paths.length) fail('duplicate native source inventory');
   return {actorPaths,paths};
 }
