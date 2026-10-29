@@ -1,7 +1,7 @@
 // Logical actor identities and incarnation-aware placement hints.
 // A name is stable across relocations; its physical placement is not.
 // This actor is NOT a transport, authorization service, or durable registry.
-isoactor ActorRouteDirectoryActor {
+define isolated actor ActorRouteDirectoryActor as
   let Array<String> actor_ids = new Array<String>();
   let Array<int> incarnations = new Array<int>();
   let Array<int> generations = new Array<int>();
@@ -9,7 +9,7 @@ isoactor ActorRouteDirectoryActor {
   let Array<String> placements = new Array<String>();
   let Array<bool> active = new Array<bool>();
 
-  pub fnc register(String actor_id, int incarnation,
+  pub register(String actor_id, int incarnation,
                    int generation, String placement): bool {
     if actor_id == "" || placement == "" ||
        incarnation < 1 || generation < 1 ||
@@ -28,7 +28,7 @@ isoactor ActorRouteDirectoryActor {
 
   // Revokes the previous incarnation/route epoch. Actual delivery must
   // revalidate this token to reject in-flight stale traffic.
-  pub fnc relocate(String actor_id, int expected_incarnation,
+  pub relocate(String actor_id, int expected_incarnation,
                    int expected_epoch, int next_incarnation,
                    int next_generation, String next_placement): bool {
     if actor_id == "" || next_placement == "" ||
@@ -56,7 +56,7 @@ isoactor ActorRouteDirectoryActor {
   }
 
   // A caller may resolve only the exact identity token it was issued.
-  pub fnc resolve(String actor_id, int incarnation,
+  pub resolve(String actor_id, int incarnation,
                   int generation, int epoch): Result<String, String> {
     let int i = 0;
     for (const existing of self.actor_ids) {
@@ -73,7 +73,7 @@ isoactor ActorRouteDirectoryActor {
     return Err("unknown actor");
   }
 
-  pub fnc retire(String actor_id, int incarnation,
+  pub retire(String actor_id, int incarnation,
                  int epoch): bool {
     let int i = 0;
     for (const existing of self.actor_ids) {
@@ -88,7 +88,7 @@ isoactor ActorRouteDirectoryActor {
     return false;
   }
 
-  pub fnc route_epoch(String actor_id): Result<int, String> {
+  pub route_epoch(String actor_id): Result<int, String> {
     let int i = 0;
     for (const existing of self.actor_ids) {
       if existing == actor_id; then
@@ -99,5 +99,5 @@ isoactor ActorRouteDirectoryActor {
     }
     return Err("unknown actor");
   }
-  pub fnc size(): int { return self.actor_ids.size; }
-}
+  pub size(): int { return self.actor_ids.size; }
+end

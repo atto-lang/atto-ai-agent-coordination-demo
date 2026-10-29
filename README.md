@@ -17,7 +17,7 @@ A **userland, native Oreslang** experiment in long-lived isolated actors for AI 
 | `AgentWorkflowActor` | `src/workflow.ores` | Version-checked workflow transitions and cancellation |
 | `AgentRegistryActor` | `src/agent_registry.ores` | Agent capability/incarnation registry (logical metadata only) |
 
-All actor state is owned by an `isoactor`. No new compiler keyword or special actor flavor is assumed. Graph nodes are compact records, *not* individually scheduled actors.
+All eight source actors are declared with `define isolated actor Name as ... end`, and their methods omit `fnc`. This is an isolation declaration, not proof of physical arena/heap separation or process sandboxing. Graph nodes are compact records, *not* individually scheduled actors.
 
 ## Coding-agent memory pipeline
 
@@ -152,5 +152,5 @@ The suite combines source-contract assertions, six JavaScript DAG/cache referenc
 - Avoid Python tooling. `node` is used only for a dependency-free static test harness in the prototype; long-term tooling can be ported to Rust.
 - No implicit `Future`/`Option` flattening or operator overloading.
 - Non-reentrant actor state access; no blocking calls in handlers.
-- Do not conflate logical `isoactor` confinement with proven dedicated physical heaps or OS isolation.
+- Do not conflate declared actor isolation with proven dedicated physical heaps or OS isolation.
 - No private-source transfer to an alternate GitHub organization without independent authorization.

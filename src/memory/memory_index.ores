@@ -1,13 +1,13 @@
 // Bounded exact-match subject index. No embeddings or graph search here.
 // Memory IDs must have been verified in the authoritative fact ledger first.
-isoactor MemoryIndexActor {
+define isolated actor MemoryIndexActor as
   let Array<String> memory_ids = new Array<String>();
   let Array<String> subjects = new Array<String>();
   let Array<String> repositories = new Array<String>();
   let Array<String> branches = new Array<String>();
   let Array<String> revisions = new Array<String>();
 
-  pub fnc link(String memory_id, String subject, String repo,
+  pub link(String memory_id, String subject, String repo,
                String branch, String revision): bool {
     if memory_id == "" || subject == "" || repo == "" || branch == "" ||
        revision == "" || self.memory_ids.size >= 4096; then return false; fi
@@ -28,7 +28,7 @@ isoactor MemoryIndexActor {
 
   // Returned IDs are candidates. The retrieval actor MUST re-check live
   // verification/supersession and scope before using any result.
-  pub fnc find(String subject, String repo, String branch,
+  pub find(String subject, String repo, String branch,
                String revision, int limit): Result<Array<String>, String> {
     if subject == "" || repo == "" || branch == "" || revision == "" ||
        limit < 1 || limit > 32; then return Err("invalid lookup"); fi
@@ -45,5 +45,5 @@ isoactor MemoryIndexActor {
     return Ok(results);
   }
 
-  pub fnc size(): int { return self.memory_ids.size; }
-}
+  pub size(): int { return self.memory_ids.size; }
+end

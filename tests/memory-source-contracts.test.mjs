@@ -25,10 +25,10 @@ const mustContain = (name, literals) => {
 for (const [file, actor, methods] of modules) {
   test(file + ' has native userland actor declaration and entrypoints', () => {
     const text = source(file);
-    assert.match(text, new RegExp('^isoactor\\s+' + actor + '\\s*\\{', 'm'));
-    assert.equal((text.match(/^isoactor\s+/gm) || []).length, 1);
+    assert.match(text, new RegExp('^define\\s+isolated\\s+actor\\s+' + actor + '\\s+as', 'm'));
+    assert.equal((text.match(/^define isolated actor /gm) || []).length, 1);
     for (const method of methods) {
-      assert.ok(text.includes('pub fnc ' + method + '('), actor + '.' + method + ' missing');
+      assert.ok(text.includes('pub ' + method + '('), actor + '.' + method + ' missing');
     }
     assert.doesNotMatch(text, /\b(?:System\.|java\.|python3?|subprocess)\b/);
   });

@@ -1,7 +1,7 @@
 // Bounded immutable evidence receipts tied to exact subject revisions.
 // Caller must independently authenticate source, origin, and content hashes.
 // A receipt records claims; it does not itself prove their truth.
-isoactor EvidenceLedgerActor {
+define isolated actor EvidenceLedgerActor as
   let Array<String> receipt_ids = new Array<String>();
   let Array<String> subjects = new Array<String>();
   let Array<String> revisions = new Array<String>();
@@ -9,7 +9,7 @@ isoactor EvidenceLedgerActor {
   let Array<int> executed_steps = new Array<int>();
   let Array<bool> successful = new Array<bool>();
 
-  pub fnc append(String receipt, String subject, String revision,
+  pub append(String receipt, String subject, String revision,
                  String digest, int steps, bool passed): bool {
     if receipt == "" || subject == "" || revision == "" || digest == "" ||
        steps <= 0 || self.receipt_ids.size >= 2048; then return false; fi
@@ -25,7 +25,7 @@ isoactor EvidenceLedgerActor {
     return true;
   }
 
-  pub fnc has_success(String subject, String revision,
+  pub has_success(String subject, String revision,
                       String digest): bool {
     let int i = 0;
     for (const existing of self.subjects) {
@@ -39,5 +39,5 @@ isoactor EvidenceLedgerActor {
     return false;
   }
 
-  pub fnc receipt_count(): int { return self.receipt_ids.size; }
-}
+  pub receipt_count(): int { return self.receipt_ids.size; }
+end
