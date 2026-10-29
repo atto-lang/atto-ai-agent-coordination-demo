@@ -1,0 +1,108 @@
+// Native Oreslang guest execution fixture for the actor coordination prototype.
+// Three agents exchange typed ActorMail<String> through a main-owned routing
+// loop, and consult one long-lived KnowledgeCacheActor. This is not direct
+// worker-to-worker routing, durable recovery or LLM inference.
+// Expected output: 1|2|evidence-ready|approved|executed
+//
+// Syntax follows executable actor fixtures in oreslang-proof-of-concepts:
+//   src/patterns/39-actor-model/runtime/{actor-isolation,actor-turn-exclusivity}.ores
+define actor KnowledgeCacheActor as
+  let int hit_count;
+
+  on_start(): void {
+    self.hit_count = 0;
+    return;
+  }
+
+  receive(ActorMail<String> mail): void {
+    if mail.value == "lookup" then
+      self.hit_count = self.hit_count + 1;
+      self.send(self.hit_count);
+      return;
+    fi
+    if mail.value == "close" then
+      self.end();
+      return;
+    fi
+    return;
+  }
+end
+
+define actor ResearchAgent as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "graph-v1" then
+      self.send("evidence-ready");
+    else
+      self.send("research-rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+define actor AnalysisAgent as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "evidence-ready" then
+      self.send("approved");
+    else
+      self.send("analysis-rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+define actor ExecutionAgent as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "approved" then
+      self.send("executed");
+    else
+      self.send("execution-rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+pub async routine main(): void {
+  val cache = spawn KnowledgeCacheActor();
+  val researcher = spawn ResearchAgent();
+  val analyzer = spawn AnalysisAgent();
+  val executor = spawn ExecutionAgent();
+
+  await cache.get_ready();
+  await researcher.get_ready();
+  await analyzer.get_ready();
+  await executor.get_ready();
+
+  cache.send("lookup");
+  val hit_one = (await cache.outputs.next()).value.unwrap();
+  cache.send("lookup");
+  val hit_two = (await cache.outputs.next()).value.unwrap();
+
+  researcher.send("graph-v1");
+  val evidence = (await researcher.outputs.next()).value.unwrap();
+
+  analyzer.send(evidence.value);
+  val decision = (await analyzer.outputs.next()).value.unwrap();
+
+  executor.send(decision.value);
+  val outcome = (await executor.outputs.next()).value.unwrap();
+
+  stdio.stdout.write(hit_one.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(hit_two.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(evidence.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(decision.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(outcome.value);
+
+  cache.send("close");
+  await cache.get_done();
+  await researcher.get_done();
+  await analyzer.get_done();
+  await executor.get_done();
+  return;
+}
