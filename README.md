@@ -17,7 +17,7 @@ A **userland, native Oreslang** experiment in long-lived isolated actors for AI 
 | `AgentWorkflowActor` | `src/workflow.ores` | Version-checked workflow transitions and cancellation |
 | `AgentRegistryActor` | `src/agent_registry.ores` | Agent capability/incarnation registry (logical metadata only) |
 
-All eight source actors are declared with `define isolated actor Name as ... end`, and their methods omit `fnc`. This is an isolation declaration, not proof of physical arena/heap separation or process sandboxing. Graph nodes are compact records, *not* individually scheduled actors.
+All eight source actors use `define isolated actor Name as ... end` without `fnc` methods, one sealed `state { ... }` schema, and only lexical `self.handle_state(...)` state loans. Writers require explicit `critical` callbacks and declared `state.write` effects; readers use `state.read`. Compiler acceptance of array-valued state, runtime loan enforcement and physical arena/heap isolation remain **unverified**, not implied by these source-only structural checks. Graph nodes are compact records, *not* individually scheduled actors.
 
 ## Example: repository intelligence graph
 

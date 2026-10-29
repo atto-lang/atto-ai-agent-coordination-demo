@@ -2,73 +2,89 @@
 // Single graph ownership prevents switching away and later rolling back its revision.
 // Expired slots are reused, but no wall-clock, persistence or eviction policy is implied.
 define isolated actor KnowledgeCacheActor as
-  let String graph_id = "";
-  let int graph_revision = -1;
-  let Array<String> keys = new Array<String>();
-  let Array<String> payloads = new Array<String>();
-  let Array<int> expires_at = new Array<int>();
+  state {
+    graph_id: String = "";
+    graph_revision: int = -1;
+    keys: Array<String> = new Array<String>();
+    payloads: Array<String> = new Array<String>();
+    expires_at: Array<int> = new Array<int>();
+  }
 
-  pub activate(String id, int revision): bool {
-    if id == "" || revision < 0; then return false; fi
-    if self.graph_id != "" && id != self.graph_id; then return false; fi
-    if revision <= self.graph_revision; then return false; fi
-    self.graph_id = id;
-    self.graph_revision = revision;
-    self.keys = new Array<String>();
-    self.payloads = new Array<String>();
-    self.expires_at = new Array<int>();
-    return true;
+  pub activate(String id, int revision): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if id == "" || revision < 0; then return false; fi
+      if s.graph_id != "" && id != s.graph_id; then return false; fi
+      if revision <= s.graph_revision; then return false; fi
+      s.graph_id = id;
+      s.graph_revision = revision;
+      s.keys = new Array<String>();
+      s.payloads = new Array<String>();
+      s.expires_at = new Array<int>();
+      return true;
+    });
   }
 
   pub put(String id, int revision, String key,
-              String payload, int expiry, int now): bool {
-    if id != self.graph_id || revision != self.graph_revision ||
-       key == "" || expiry <= now; then return false; fi
-
-    // Reuse the same expired key preferentially, otherwise the first
-    // expired slot. An old expired entry must not mask a new value on get.
-    let int reusable = -1;
-    let int i = 0;
-    for (const existing of self.keys) {
-      if existing == key; then
-        if now < self.expires_at[i]; then return false; fi
-        reusable = i;
-      else
-        if now >= self.expires_at[i] && reusable < 0; then
+              String payload, int expiry, int now): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if id != s.graph_id || revision != s.graph_revision ||
+         key == "" || expiry <= now; then return false; fi
+      
+      // Reuse the same expired key preferentially, otherwise the first
+      // expired slot. An old expired entry must not mask a new value on get.
+      let int reusable = -1;
+      let int i = 0;
+      for (const existing of s.keys) {
+        if existing == key; then
+          if now < s.expires_at[i]; then return false; fi
           reusable = i;
+        else
+          if now >= s.expires_at[i] && reusable < 0; then
+            reusable = i;
+          fi
         fi
+        i = i + 1;
+      }
+      if reusable >= 0; then
+        s.keys[reusable] = key;
+        s.payloads[reusable] = payload;
+        s.expires_at[reusable] = expiry;
+        return true;
       fi
-      i = i + 1;
-    }
-    if reusable >= 0; then
-      self.keys[reusable] = key;
-      self.payloads[reusable] = payload;
-      self.expires_at[reusable] = expiry;
+      if s.keys.size >= 1024; then return false; fi
+      s.keys.add(key);
+      s.payloads.add(payload);
+      s.expires_at.add(expiry);
       return true;
-    fi
-    if self.keys.size >= 1024; then return false; fi
-    self.keys.add(key);
-    self.payloads.add(payload);
-    self.expires_at.add(expiry);
-    return true;
+    });
   }
 
   pub get(String id, int revision, String key,
-              int now): Result<String, String> {
-    if id != self.graph_id || revision != self.graph_revision; then
-      return Err("cache revision mismatch");
-    fi
-    let int i = 0;
-    for (const existing of self.keys) {
-      if existing == key; then
-        if now >= self.expires_at[i]; then return Err("expired"); fi
-        return Ok(self.payloads[i]);
+              int now): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
+      if id != s.graph_id || revision != s.graph_revision; then
+        return Err("cache revision mismatch");
       fi
-      i = i + 1;
-    }
-    return Err("cache miss");
+      let int i = 0;
+      for (const existing of s.keys) {
+        if existing == key; then
+          if now >= s.expires_at[i]; then return Err("expired"); fi
+          return Ok(s.payloads[i]);
+        fi
+        i = i + 1;
+      }
+      return Err("cache miss");
+    });
   }
 
-  pub entries(): int { return self.keys.size; }
-  pub revision(): int { return self.graph_revision; }
+  pub entries(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.keys.size;
+    });
+  }
+  pub revision(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.graph_revision;
+    });
+  }
 end

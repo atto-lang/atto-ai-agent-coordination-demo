@@ -25,3 +25,6 @@ The prototype assumes the caller has already verified the identity of a remote w
 
 ## Validation language
 The JS source-contract checks only prove designated structural properties exist as text. The six separately executable JS reference-model tests pin intended graph/cache transitions, **not** Oreslang actor execution. Neither suite is a native parser/type-checker test, runtime verification, CI runner-admission result, or application benchmark. Zero-step CI is not a failed source test. Report these independently.
+
+## Sealed state source invariant
+Each isolated actor has exactly one `state { ... }` block, no free-standing persistent actor fields, no direct field read or write, and no user-defined `handle_state` override. Every public method obtains exactly one lexical state loan; every mutation is inside an explicit `critical` callback and declares write effects. Callbacks must not suspend, return state-backed aliases or nest another loan. The source-contract test enforces these syntactic constraints only; the compiler's array-state support, critical ownership and actual memory separation remain to be proven.

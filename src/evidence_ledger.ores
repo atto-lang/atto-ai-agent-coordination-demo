@@ -2,42 +2,52 @@
 // Caller must independently authenticate source, origin, and content hashes.
 // A receipt records claims; it does not itself prove their truth.
 define isolated actor EvidenceLedgerActor as
-  let Array<String> receipt_ids = new Array<String>();
-  let Array<String> subjects = new Array<String>();
-  let Array<String> revisions = new Array<String>();
-  let Array<String> evidence_digests = new Array<String>();
-  let Array<int> executed_steps = new Array<int>();
-  let Array<bool> successful = new Array<bool>();
+  state {
+    receipt_ids: Array<String> = new Array<String>();
+    subjects: Array<String> = new Array<String>();
+    revisions: Array<String> = new Array<String>();
+    evidence_digests: Array<String> = new Array<String>();
+    executed_steps: Array<int> = new Array<int>();
+    successful: Array<bool> = new Array<bool>();
+  }
 
   pub append(String receipt, String subject, String revision,
-                 String digest, int steps, bool passed): bool {
-    if receipt == "" || subject == "" || revision == "" || digest == "" ||
-       steps <= 0 || self.receipt_ids.size >= 2048; then return false; fi
-    for (const existing of self.receipt_ids) {
-      if existing == receipt; then return false; fi
-    }
-    self.receipt_ids.add(receipt);
-    self.subjects.add(subject);
-    self.revisions.add(revision);
-    self.evidence_digests.add(digest);
-    self.executed_steps.add(steps);
-    self.successful.add(passed);
-    return true;
+                 String digest, int steps, bool passed): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if receipt == "" || subject == "" || revision == "" || digest == "" ||
+         steps <= 0 || s.receipt_ids.size >= 2048; then return false; fi
+      for (const existing of s.receipt_ids) {
+        if existing == receipt; then return false; fi
+      }
+      s.receipt_ids.add(receipt);
+      s.subjects.add(subject);
+      s.revisions.add(revision);
+      s.evidence_digests.add(digest);
+      s.executed_steps.add(steps);
+      s.successful.add(passed);
+      return true;
+    });
   }
 
   pub has_success(String subject, String revision,
-                      String digest): bool {
-    let int i = 0;
-    for (const existing of self.subjects) {
-      if existing == subject && self.revisions[i] == revision &&
-         self.evidence_digests[i] == digest &&
-         self.executed_steps[i] > 0 && self.successful[i]; then
-        return true;
-      fi
-      i = i + 1;
-    }
-    return false;
+                      String digest): bool with state.read {
+    return self.handle_state(|s| -> {
+      let int i = 0;
+      for (const existing of s.subjects) {
+        if existing == subject && s.revisions[i] == revision &&
+           s.evidence_digests[i] == digest &&
+           s.executed_steps[i] > 0 && s.successful[i]; then
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
-  pub receipt_count(): int { return self.receipt_ids.size; }
+  pub receipt_count(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.receipt_ids.size;
+    });
+  }
 end
