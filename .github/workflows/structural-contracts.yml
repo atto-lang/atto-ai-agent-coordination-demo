@@ -16,6 +16,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact checked-out source identity
+        run: |
+          echo "SOURCE_HEAD_SHA=$(git rev-parse HEAD)"
+          echo "SOURCE_TREE_SHA=$(git rev-parse HEAD^{tree})"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          fi
       - name: Source-contract checks and JS specification model (NOT native Oreslang tests)
         run: |
           node --version
