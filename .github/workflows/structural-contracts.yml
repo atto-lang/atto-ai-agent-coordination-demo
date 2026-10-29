@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Source-only contract checks (NOT native Oreslang tests)
+      - name: Source-contract checks and JS specification model (NOT native Oreslang tests)
         run: |
           node --version
           node --test tests/*.test.mjs

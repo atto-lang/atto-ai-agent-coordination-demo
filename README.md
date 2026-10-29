@@ -9,8 +9,8 @@ A **userland, native Oreslang** experiment in long-lived isolated actors for AI 
 | Actor | Source | Responsibility |
 | --- | --- | --- |
 | `KnowledgeGraphActor` | `src/knowledge_graph.ores` | Bounded directed entity/relationship partition, revisioned lookup and traversal |
-| `KnowledgeCacheActor` | `src/knowledge_cache.ores` | Version-pinned cache, caller-provided logical expiry, explicit invalidation |
-| `DecisionTreeActor` | `src/decision_tree.ores` | Deterministic branch routing using caller-evaluated predicates |
+| `KnowledgeCacheActor` | `src/knowledge_cache.ores` | Single-graph cache, increasing revisions, caller-provided logical expiry, expired-slot reuse |
+| `DecisionTreeActor` | `src/decision_tree.ores` | Closed acyclic decision DAG with explicit terminals and caller-evaluated predicates |
 | `DecisionGateActor` | `src/decision_gate.ores` | Exact-revision evidence + independent approval, deny-by-default |
 | `EvidenceLedgerActor` | `src/evidence_ledger.ores` | Append-only bounded evidence receipts with subject/revision digest |
 | `AgentCoordinatorActor` | `src/agent_coordinator.ores` | Bounded in-flight work tickets, idempotent rejection, settlement |
@@ -21,13 +21,11 @@ All actor state is owned by an `isoactor`. No new compiler keyword or special ac
 
 ## Coding-agent memory pipeline
 
-The second userland module introduces **nine additional memory actors** under `src/memory/`:
+Nine additional native userland actors live under `src/memory/`: ingestion, extraction, verification, consolidation, indexing, retrieval, branch-head invalidation, context assembly, and an external-checkpoint manifest.
 
-- `MemoryIngestionActor`, `MemoryExtractionActor`, and `MemoryVerificationActor` for event envelopes, untrusted candidate facts, and explicit evidence-based promotion.
-- `MemoryConsolidationActor`, `MemoryIndexActor`, and `MemoryRetrievalActor` for scoped deduplication, revision-specific indexing, and a bounded read model.
-- `MemoryInvalidationActor`, `ContextAssemblyActor`, and `MemoryCheckpointManifestActor` for branch-head CAS, token-estimate-bounded context packaging, and references to externally persisted snapshots.
+This subsystem tracks **untrusted observations separately from verified facts**, supports exact Git-revision-scoped reads and bounded context packages, and records externally persisted checkpoint references. **It does not yet implement persistent storage, authenticated network routing, actual tokenization, LLM extraction, atomic cross-actor updates, or runtime recovery.**
 
-**No persistent storage, automated LLM extraction, authenticated network transport, actual tokenization, or cross-actor transaction is implemented yet.** This is a bounded, in-memory actor-contract prototype. Read the [memory-pipeline architecture](docs/MEMORY_PIPELINE.md) and [native acceptance scenarios](tests/memory-guest-acceptance.md).
+Read [the memory-pipeline architecture](docs/MEMORY_PIPELINE.md) and the [native guest acceptance matrix](tests/memory-guest-acceptance.md). The source-only checks live in `tests/memory-source-contracts.test.mjs` and run alongside the existing graph contracts and JS reference models.
 
 ## Example: repository intelligence graph
 
@@ -41,7 +39,7 @@ See [architecture](docs/ARCHITECTURE.md), [invariants and trust boundaries](docs
 node --test tests/*.test.mjs
 ```
 
-These are **source/structure checks only**, *not* proof of Oreslang compilation or runtime semantics. The workflow runs in this repository without external source mirroring. Native compiler execution must use authorized environments and be reported separately, including actual job-step evidence.
+The suite combines **source/structure checks** and six **independent JavaScript reference-model tests** for the intended DAG/cache transitions. Neither proves Oreslang compilation or runtime semantics. The workflow runs in this repository without external source mirroring. Native compiler execution must use authorized environments and be reported separately, including actual job-step evidence.
 
 ## Userland constraints
 
