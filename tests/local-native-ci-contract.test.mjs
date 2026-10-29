@@ -42,3 +42,20 @@ test('malformed demo SHA also fails without executing a build', () => {
   assert.equal(r.status,2);
   assert.match(r.stderr,/LOCAL_NATIVE_CI_UNVERIFIED invalid demo SHA/);
 });
+
+test('guest-only mode has a distinct success label and does not claim sealed state', () => {
+  assert.match(source, /scope === "guest-only"/);
+  assert.match(source, /node scripts\/run-native-guest\.mjs/);
+  assert.match(source, /LOCAL_NATIVE_GUEST_SMOKE_RESULT passed=true/);
+  assert.match(source, /guest_only_no_sealed_actor_validation/);
+  assert.match(source, /node scripts\/run-native-acceptance\.mjs/);
+  assert.match(source, /LOCAL_NATIVE_CI_RESULT passed=true/);
+});
+test('native scope cannot be an unrecognized value', () => {
+  const r=run({...process.env,ORESLANG_COMPILER_ROOT:'/tmp',
+    ORESLANG_COMPILER_SHA:'a'.repeat(40),
+    ORESLANG_DEMO_SHA:'b'.repeat(40),
+    ORESLANG_NATIVE_SCOPE:'skip-checks'});
+  assert.equal(r.status,2);
+  assert.match(r.stderr,/LOCAL_NATIVE_CI_UNVERIFIED invalid native scope/);
+});
