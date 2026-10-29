@@ -105,7 +105,23 @@ define isolated actor ExecutionGraphActor as
   pub start(String node, int expected_revision): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if !s.sealed || expected_revision != s.revision ||
-         s.revision >= 2147483646 ; then return false; fi
+         s.revision >= 2147483646; then return false; fi
+      let bool dependencies_met = true;
+      let int dep_i = 0;
+      for (const dependent of s.dependents) {
+        if dependent == node; then
+          let int j = 0;
+          let bool found = false;
+          for (const known of s.node_ids) {
+            if known == s.prerequisites[dep_i] &&
+               s.node_states[j] == 2; then found = true; fi
+            j = j + 1;
+          }
+          if !found; then dependencies_met = false; fi
+        fi
+        dep_i = dep_i + 1;
+      }
+      if !dependencies_met; then return false; fi
       let int i = 0;
       for (const existing of s.node_ids) {
         if existing == node && s.node_states[i] == 0; then
@@ -124,22 +140,7 @@ define isolated actor ExecutionGraphActor as
     return self.handle_state(critical |s| -> {
       if !s.sealed || expected_revision != s.revision ||
          s.revision >= 2147483646; then return false; fi
-      let bool dependencies_met = true;
-      let int dep_i = 0;
-      for (const dependent of s.dependents) {
-        if dependent == node; then
-          let int j = 0;
-          let bool found = false;
-          for (const known of s.node_ids) {
-            if known == s.prerequisites[dep_i] &&
-               s.node_states[j] == 2; then found = true; fi
-            j = j + 1;
-          }
-          if !found; then dependencies_met = false; fi
-        fi
-        dep_i = dep_i + 1;
-      }
-      if !dependencies_met; then return false; fi
+
       let int i = 0;
       for (const existing of s.node_ids) {
         if existing == node && s.node_states[i] == 1; then
