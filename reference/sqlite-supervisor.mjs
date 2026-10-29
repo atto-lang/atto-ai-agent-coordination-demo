@@ -166,14 +166,24 @@ export class SqliteWorkflowSupervisor {
       (decision==='committed' || decision==='not_applied'), 'invalid reconciliation');
     require_that(adapter && typeof adapter.verify_receipt==='function',
       'trusted verification adapter required');
+    // Remote receipt validation must NOT run under SQLite's BEGIN IMMEDIATE
+    // writer lock; an authoritative provider may be slow or fail. Read the
+    // claimed key/digest first, verify outside the transaction, then re-check
+    // the exact same row and workflow fence atomically before settlement.
+    this.#fenced(tenant,run,revision,epoch,version);
+    const expected=this.#db.prepare('SELECT effect_key,digest,state FROM effects WHERE tenant=? AND run=? AND step=?')
+      .get(tenant,run,step);
+    require_that(expected && expected.state==='in_doubt', 'effect not in doubt');
+    const verified=adapter.verify_receipt({tenant,run,step,key:expected.effect_key,
+      digest:expected.digest,decision,receipt});
+    require_that(verified===true, 'unverified remote receipt');
     return this.#transaction(() => {
       this.#fenced(tenant,run,revision,epoch,version);
-      const effect=this.#db.prepare('SELECT * FROM effects WHERE tenant=? AND run=? AND step=?')
+      const current=this.#db.prepare('SELECT effect_key,digest,state FROM effects WHERE tenant=? AND run=? AND step=?')
         .get(tenant,run,step);
-      require_that(effect && effect.state==='in_doubt', 'effect not in doubt');
-      const verified=adapter.verify_receipt({tenant,run,step,key:effect.effect_key,
-        digest:effect.digest,decision,receipt});
-      require_that(verified===true, 'unverified remote receipt');
+      require_that(current && current.state==='in_doubt' &&
+        current.effect_key===expected.effect_key && current.digest===expected.digest,
+        'effect changed during receipt verification');
       this.#db.prepare('UPDATE effects SET state=?, receipt=? WHERE tenant=? AND run=? AND step=?')
         .run(decision,receipt,tenant,run,step);
       this.#db.prepare('UPDATE inbox SET state=? WHERE tenant=? AND run=? AND step=?')
