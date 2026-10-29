@@ -23,9 +23,9 @@ All eight source actors are declared with `define isolated actor Name as ... end
 
 Nine additional native userland actors live under `src/memory/`: ingestion, extraction, verification, consolidation, indexing, retrieval, branch-head invalidation, context assembly, and an external-checkpoint manifest.
 
-This subsystem tracks **untrusted observations separately from verified facts**, supports exact Git-revision-scoped reads and bounded context packages, and records externally persisted checkpoint references. **It does not yet implement persistent storage, authenticated network routing, actual tokenization, LLM extraction, atomic cross-actor updates, or runtime recovery.**
+This subsystem tracks **untrusted observations separately from verified facts**, supports exact Git-revision-scoped reads and now quarantines context **reference manifests only** rather than assembling excerpts from unverified token estimates, and records externally persisted checkpoint references. **It does not yet implement persistent storage, authenticated network routing, signed evidence enforcement at native model ingress, actual tokenization, LLM extraction, atomic cross-actor updates, or runtime recovery.**
 
-Read [the memory-pipeline architecture](docs/MEMORY_PIPELINE.md) and the [native guest acceptance matrix](tests/memory-guest-acceptance.md). The source-only checks live in `tests/memory-source-contracts.test.mjs` and run alongside the existing graph contracts and JS reference models.
+The legacy native context `add(...estimated_tokens)` API has been removed; `selected_excerpts` fails closed. This intentionally breaks old callers until an authenticated host adapter and verified native compiler are available. Read [the memory-pipeline architecture](docs/MEMORY_PIPELINE.md) and the [native guest acceptance matrix](tests/memory-guest-acceptance.md). The source-only checks live in `tests/memory-source-contracts.test.mjs` and run alongside the existing graph contracts and JS reference models.
 
 ## Example: repository intelligence graph
 
