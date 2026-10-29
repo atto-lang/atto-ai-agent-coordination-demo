@@ -54,9 +54,23 @@ export function auditActorSource(source) {
       problems.push(name + ': unnecessary critical write admission');
     if (!written && !/with\s+state\.read\b/.test(signature))
       problems.push(name + ': missing read effect');
-    for (const returned of body.matchAll(/return s\.(\w+)\s*;/g))
-      if (fields.get(returned[1])?.startsWith('Array<'))
-        problems.push(name + ': escaped state array');
+    // A state-backed Array cannot be returned, passed, or stored in a local
+    // alias. Borrowed iteration ("for (... of s.items)") is admitted inside
+    // the loan; indexing or member operations do not expose Array identity.
+    // Deliberately conservative until verified detached-snapshot lowering.
+    for (const [field, type] of fields) {
+      if (!type.startsWith('Array<')) continue;
+      const accesses = new RegExp('\\bs\\.' + field + '\\b(?!\\s*(?:\\.|\\[))', 'g');
+      for (const access of body.matchAll(accesses)) {
+        const prefix = body.slice(body.lastIndexOf('\n', access.index - 1) + 1, access.index);
+        if (/\bof\s*$/.test(prefix)) continue;
+        // Replacing the owned field with a new value is a write, not an
+        // escape of the previous Array. Plain '=' only; '==' is not a write.
+        const suffix = body.slice(access.index + 2 + field.length);
+        if (/^\s*=(?!=)/.test(suffix)) continue;
+        problems.push(name + ': exposed actor-owned state array ' + field);
+      }
+    }
     if (written) writes++;
     else reads++;
   }
