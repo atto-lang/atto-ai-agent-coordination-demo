@@ -174,6 +174,31 @@ authenticate real external tool receipts or constitute a distributed lease.
 
 See [Native workflow storage adapter and test evidence](docs/NATIVE_WORKFLOW_STORAGE_ADAPTER.md).
 
+## Java/JNI native storage bridge (draft)
+
+The workflow storage C ABI is now exercised from a **real Java JVM via
+JNI**, using `NativeWorkflowStore` and the existing C++17 SQLite driver.
+The bridge exposes typed Java `Lease`/`Snapshot` results, serializes
+each handle's lifecycle and propagates explicit native error codes.
+The host supplies separate authorization and remote receipt-verification
+callbacks; callback exceptions fail closed.
+
+The Java integration tests include actual Java child processes terminated
+after a persisted outbox dispatch claim and after a **simulated** remote
+effect commit. Reopening the storage requires a new epoch and never
+automatically redispatches an in-doubt effect. The full build/test command is:
+
+```sh
+bash scripts/check-jni-workflow.sh
+```
+
+**4/4 high-level Java/JNI/SQLite test groups passed**, repeated four times
+with GCC and once with Clang++ on JDK21/Linux. These are **not Oreslang
+guest calls or GraalVM Native Image tests**: the typed
+`contracts/native/workflow_storage.ores` contract is not yet lowered
+to this host API. Read
+[Java/JNI workflow storage implementation and remaining gates](docs/JAVA_JNI_WORKFLOW_STORAGE.md).
+
 ## Transactional inbox/outbox and native protocol (draft)
 
 The new `WorkflowInboxOutboxActor` is **pure Oreslang source**, with
