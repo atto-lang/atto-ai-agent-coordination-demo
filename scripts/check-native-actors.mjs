@@ -6,6 +6,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Exact ten positive cases; the negative source check runs separately.
 const files = [
   'src/agent_coordinator.ores', 'src/agent_registry.ores',
   'src/decision_gate.ores', 'src/decision_tree.ores',
@@ -52,8 +53,29 @@ for (const file of files) {
     stderr: (run.stderr || '').slice(-800) });
   if (!passed) break;
 }
-const passed = outcomes.length === files.length && outcomes.every(x => x.passed);
+const positive_ok = outcomes.length === files.length && outcomes.every(x => x.passed);
+let negative = null;
+if (positive_ok) {
+  const path = 'tests/guest/negative/wrong_actor_mail_type.ores';
+  const source = join(base, path);
+  if (!existsSync(source)) fail('missing negative type fixture');
+  const run = spawnSync(java, ['-cp', classes + delimiter + cp,
+    'dev.oreslang.launcher.OresMain', '--check', source], {
+    cwd: root, encoding: 'utf8', timeout: 30000, maxBuffer: 1024*1024, shell: false
+  });
+  // A failure merely due to syntax, missing classes, or a runner exception
+  // does NOT satisfy a negative type checker test.
+  const diagnostic = String(run.stderr || '') + '\n' + String(run.stdout || '');
+  negative = {
+    file: path, exit_code: run.status, signal: run.signal,
+    expected_type_error: 'ActorRef.send mailbox value',
+    passed: !run.error && !run.signal && run.status !== null &&
+      run.status !== 0 && diagnostic.includes('ActorRef.send mailbox value'),
+    diagnostic: diagnostic.slice(-1000)
+  };
+}
+const passed = positive_ok && Boolean(negative && negative.passed);
 console.log('NATIVE_CHECK_RESULT ' + JSON.stringify({compiler_source_head:head,
-  scope:'OresMain --check; does not prove actual guest execution',
-  checked:outcomes.length, required:files.length, passed, outcomes}));
-if (!passed) fail('native compiler check failed; see diagnostics',1);
+  scope:'OresMain --check; ten positive source checks and one negative mailbox typing check; NOT guest execution',
+  checked:outcomes.length, required:files.length, negative, passed, outcomes}));
+if (!passed) fail('native compiler positive or negative check failed; see diagnostics',1);
