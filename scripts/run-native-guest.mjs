@@ -1,84 +1,72 @@
 #!/usr/bin/env node
-// Fail-closed native Oreslang guest runner. No Python and no cross-org checkout.
-// Required environment:
-//   ORESLANG_COMPILER_ROOT=/path/to/oreslang-source.java
-//   ORESLANG_COMPILER_SHA=<exact 40-digit Git HEAD>
-// Optional ORESLANG_JAVA_BIN (default: java).
-// Only a trusted, locally built compiler checkout is accepted. A matching
-// source SHA does not by itself attest that compiled class files match it.
+// Fail-closed guest execution against a pinned, locally built Java compiler.
+// These are live ActorMail/ActorRef fixtures, not durable recovery proofs.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-function fail(message, status = 2) {
-  console.error('NATIVE_GUEST_UNVERIFIED ' + message);
-  process.exit(status);
+function fail(reason, code = 2) {
+  console.error('NATIVE_GUEST_UNVERIFIED ' + reason);
+  process.exit(code);
 }
 const sha = process.env.ORESLANG_COMPILER_SHA ?? '';
 const rootInput = process.env.ORESLANG_COMPILER_ROOT ?? '';
-if (!/^[a-f0-9]{40}$/.test(sha) || !rootInput) {
+if (!/^[a-f0-9]{40}$/.test(sha) || !rootInput)
   fail('set ORESLANG_COMPILER_ROOT and exact ORESLANG_COMPILER_SHA');
-}
-
 let root;
 try { root = realpathSync(resolve(rootInput)); }
-catch { fail('compiler repository not present'); }
-
-const fixture = fileURLToPath(new URL('../tests/guest/agent_pipeline.ores', import.meta.url));
-const oracle = fileURLToPath(new URL('../tests/guest/agent_pipeline.stdout', import.meta.url));
+catch { fail('compiler repository unavailable'); }
 const classes = join(root, 'target', 'classes');
-const runtimePath = join(root, 'target', 'runtime-classpath.txt');
-if (!existsSync(classes) || !existsSync(runtimePath) ||
-    !existsSync(fixture) || !existsSync(oracle)) {
-  fail('missing compiled classes, runtime classpath, guest source, or oracle');
-}
-
-let head;
-let dirty;
+const cpFile = join(root, 'target', 'runtime-classpath.txt');
+if (!existsSync(classes) || !existsSync(cpFile))
+  fail('missing built classes or runtime classpath');
+let head, dirty;
 try {
-  const options = { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 };
-  head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], options).trim();
-  dirty = execFileSync('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], options).trim();
-} catch {
-  fail('compiler checkout provenance could not be inspected');
-}
-if (head !== sha || dirty) {
-  fail('compiler checkout SHA mismatch or modified tracked files');
-}
-const dependencies = readFileSync(runtimePath, 'utf8').trim();
+  const opts = { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 };
+  head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], opts).trim();
+  dirty = execFileSync('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], opts).trim();
+} catch { fail('compiler checkout provenance unavailable'); }
+if (head !== sha || dirty) fail('compiler SHA mismatch or modified tracked source');
+const dependencies = readFileSync(cpFile, 'utf8').trim();
 if (!dependencies) fail('empty runtime classpath');
 
-const expected = readFileSync(oracle);
-const source = readFileSync(fixture);
-if (expected.length === 0 || source.length === 0) fail('zero-byte fixture or oracle');
-const hash = data => createHash('sha256').update(data).digest('hex');
+const cases = [
+  'agent_pipeline',
+  'direct_agent_hop'
+];
+const sha256 = b => createHash('sha256').update(b).digest('hex');
 const java = process.env.ORESLANG_JAVA_BIN || 'java';
-const command = [ '-cp', classes + delimiter + dependencies,
-  'dev.oreslang.launcher.OresMain', fixture ];
-const start = Date.now();
-const result = spawnSync(java, command, {
-  cwd: root, encoding: 'buffer', timeout: 30000,
-  maxBuffer: 2 * 1024 * 1024, shell: false
-});
-const report = {
-  test: 'agent_pipeline',
-  scope: 'native Java guest stdout oracle, not full compiler parity or crash recovery',
-  compiler_source_head: head,
-  compiler_worktree_clean: true,
-  fixture_sha256: hash(source),
-  oracle_sha256: hash(expected),
-  exit_code: result.status,
-  signal: result.signal,
-  milliseconds: Date.now() - start,
-  stdout_exact: Boolean(result.stdout && result.stdout.equals(expected)),
-  executed: !result.error && result.status !== null
-};
-const ok = report.executed && report.exit_code === 0 && report.stdout_exact;
-console.log('NATIVE_GUEST_RESULT ' + JSON.stringify({ ...report, passed: ok }));
-if (!ok) {
-  if (result.error) console.error(String(result.error.message));
-  if (result.stderr) console.error(result.stderr.toString('utf8').slice(-2500));
-  fail('real guest execution did not match exact stdout oracle', 1);
+const results = [];
+for (const name of cases) {
+  const source = fileURLToPath(new URL('../tests/guest/' + name + '.ores', import.meta.url));
+  const oracle = fileURLToPath(new URL('../tests/guest/' + name + '.stdout', import.meta.url));
+  if (!existsSync(source) || !existsSync(oracle)) fail('missing guest source or oracle for ' + name);
+  const sourceBytes = readFileSync(source), expected = readFileSync(oracle);
+  if (!sourceBytes.length || !expected.length) fail('empty guest source or oracle for ' + name);
+  const start = Date.now();
+  const run = spawnSync(java, ['-cp', classes + delimiter + dependencies,
+    'dev.oreslang.launcher.OresMain', source], {
+    cwd: root, encoding: 'buffer', timeout: 30000,
+    maxBuffer: 2 * 1024 * 1024, shell: false
+  });
+  const passed = !run.error && !run.signal && run.status === 0 &&
+    Boolean(run.stdout && run.stdout.equals(expected));
+  results.push({
+    name, passed, exit_code: run.status, signal: run.signal,
+    stdout_exact: Boolean(run.stdout && run.stdout.equals(expected)),
+    source_sha256: sha256(sourceBytes), oracle_sha256: sha256(expected),
+    duration_ms: Date.now() - start,
+    stderr: run.stderr ? run.stderr.toString('utf8').slice(-1200) : '',
+    error: run.error ? String(run.error.message) : null
+  });
+  if (!passed) break;
 }
+const ok = results.length === cases.length && results.every(r => r.passed);
+console.log('NATIVE_GUEST_RESULT ' + JSON.stringify({
+  compiler_source_head: head, cases_required: cases.length,
+  cases_executed: results.length, passed: ok, results,
+  scope: 'real Java guest stdout: mediated pipeline plus direct ActorRef hop, NOT durable recovery'
+}));
+if (!ok) fail('actual guest execution failed or stdout mismatched', 1);
