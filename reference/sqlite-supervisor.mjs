@@ -2,7 +2,7 @@
 // Storage-enforced local CAS and durable intents; no distributed consensus,
 // cryptographic approvals, remote tool provider or multi-machine lease.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, lstatSync, chmodSync } from 'node:fs';
+import { mkdirSync, lstatSync, openSync, closeSync, constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 function require_that(ok, reason) { if (!ok) throw Error(reason); }
@@ -13,15 +13,28 @@ const valid_receipt = v => typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,160}$/.t
 
 export class SqliteWorkflowSupervisor {
   #db;
-  constructor(directory) {
+  #verifier;
+  constructor(directory, verifier) {
+    require_that(verifier && typeof verifier.require === 'function', 'capability verifier required');
+    this.#verifier = verifier;
     const root = resolve(directory);
     mkdirSync(root, { recursive:true, mode:0o700 });
     const stat = lstatSync(root);
     require_that(stat.isDirectory() && (stat.mode & 0o077) === 0,
       'private, nonsymlink storage directory required');
     const path = join(root, 'workflow-supervisor.sqlite');
+    // Refuse symlink/hardlink DB paths before SQLite is allowed to open them.
+    // The protected private directory must be owner-controlled and local.
+    let fd;
+    try { fd=openSync(path,constants.O_CREAT|constants.O_EXCL|constants.O_RDWR|constants.O_NOFOLLOW,0o600); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      const info=lstatSync(path);
+      require_that(info.isFile() && info.nlink===1 && (info.mode & 0o077)===0,
+        'unsafe SQLite database file');
+    }
+    if (fd!==undefined) closeSync(fd);
     this.#db = new DatabaseSync(path);
-    chmodSync(path, 0o600);
     this.#db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=1000;');
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS workflow (
@@ -45,18 +58,20 @@ export class SqliteWorkflowSupervisor {
     try { const value = callback(); this.#db.exec('COMMIT'); return value; }
     catch (err) { this.#db.exec('ROLLBACK'); throw err; }
   }
-  create_run(tenant, run, revision) {
+  create_run(tenant, run, revision, capability) {
+    this.#verifier.require(capability,'create_run',{tenant,run,revision});
     require_that(valid_id(tenant) && valid_id(run) && valid_sha(revision), 'invalid run identity');
     return this.#transaction(() => {
       this.#db.prepare('INSERT INTO workflow(tenant,run,revision) VALUES (?,?,?)').run(tenant,run,revision);
       return {tenant,run,revision,epoch:0,version:0};
     });
   }
-  activate(tenant, run, revision) {
+  activate(tenant, run, revision, expected_epoch, capability) {
+    this.#verifier.require(capability,'activate',{tenant,run,revision,epoch:expected_epoch});
     require_that(valid_id(tenant) && valid_id(run) && valid_sha(revision), 'invalid activation identity');
     return this.#transaction(() => {
       const row=this.#db.prepare('SELECT * FROM workflow WHERE tenant=? AND run=?').get(tenant,run);
-      require_that(row && row.revision===revision && row.epoch < 2147483646,
+      require_that(row && row.revision===revision && row.epoch===expected_epoch && row.epoch < 2147483646,
         'missing run, stale revision or epoch overflow');
       this.#db.prepare('UPDATE workflow SET epoch=epoch+1,version=version+1 WHERE tenant=? AND run=?')
         .run(tenant,run);
@@ -72,7 +87,8 @@ export class SqliteWorkflowSupervisor {
       'stale generation, revision, version or terminal run');
     return row;
   }
-  prepare_effect({tenant,run,revision,epoch,version,step,key,digest}) {
+  prepare_effect({tenant,run,revision,epoch,version,step,key,digest},capability) {
+    this.#verifier.require(capability,'prepare_effect',{tenant,run,revision,epoch,version,step,key,digest});
     require_that(valid_id(step) && valid_id(key) && valid_digest(digest), 'invalid effect identity');
     return this.#transaction(() => {
       this.#fenced(tenant,run,revision,epoch,version);
@@ -86,7 +102,8 @@ export class SqliteWorkflowSupervisor {
   }
   // The caller MUST inject a trusted local adapter that verifies the durable
   // remote result by exact idempotency key+digest; strings are NOT signatures.
-  reconcile({tenant,run,revision,epoch,version,step,decision,receipt}, adapter) {
+  reconcile({tenant,run,revision,epoch,version,step,decision,receipt}, adapter, capability) {
+    this.#verifier.require(capability,'reconcile',{tenant,run,revision,epoch,version,step,decision,receipt});
     require_that(valid_id(step) && valid_receipt(receipt) &&
       (decision==='committed' || decision==='not_applied'), 'invalid reconciliation');
     require_that(adapter && typeof adapter.verify_receipt==='function',
@@ -106,7 +123,8 @@ export class SqliteWorkflowSupervisor {
       return {epoch,version:version+1,state:decision};
     });
   }
-  finish({tenant,run,revision,epoch,version}) {
+  finish({tenant,run,revision,epoch,version},capability) {
+    this.#verifier.require(capability,'finish',{tenant,run,revision,epoch,version});
     return this.#transaction(() => {
       this.#fenced(tenant,run,revision,epoch,version);
       const summary=this.#db.prepare(`SELECT COUNT(*) AS total,
@@ -118,10 +136,12 @@ export class SqliteWorkflowSupervisor {
       return {epoch,version:version+1,phase:'finished'};
     });
   }
-  inspect(tenant, run) {
+  inspect(tenant, run, revision, capability) {
     require_that(valid_id(tenant) && valid_id(run), 'invalid read identity');
+    require_that(valid_sha(revision), 'invalid read revision');
+    this.#verifier.require(capability,'inspect',{tenant,run,revision});
     const workflow=this.#db.prepare('SELECT * FROM workflow WHERE tenant=? AND run=?').get(tenant,run);
-    if (!workflow) return null;
+    if (!workflow || workflow.revision!==revision) return null;
     const effects=this.#db.prepare('SELECT step,effect_key,digest,state,receipt FROM effects WHERE tenant=? AND run=? ORDER BY step')
       .all(tenant,run);
     return {workflow:{...workflow},effects:effects.map(x=>({...x}))};
