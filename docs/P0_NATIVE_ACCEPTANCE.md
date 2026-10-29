@@ -32,13 +32,52 @@ The runner requires: (1) exact 40-hex compiler source HEAD, (2) clean tracked co
 
 **Caution:** Checking Git source HEAD does not attest the Java class files were compiled from that SHA. Collect the Maven build log from the same clean checkout/run, toolchain version, complete source Git tree SHA, and verify the build and guest run are contiguous. The script does not enforce a JDK 25 toolchain on its own; record and evaluate that separately.
 
+## Exact-head one-command native acceptance
+
+The Java reference launcher currently implements `--check` via
+`LinkedProgramRunner.validate`. The new fail-closed gate
+`scripts/check-native-actors.mjs` invokes it against **all eight** `src/*.ores`
+actors and `tests/guest/agent_pipeline.ores`. The combined gate
+`scripts/run-native-acceptance.mjs` first requires an exact, clean **demo**
+Git HEAD and tree, then runs compiler checks, then runs the guest stdout oracle.
+It does not skip a failed actor and does not claim a native pass without
+actual compiler/launcher execution.
+
+From an authorized, trusted checkout of **both** private repositories,
+build the Java compiler (prefer GraalVM/JDK 25, capture Maven and toolchain logs):
+
+```sh
+cd /path/to/oreslang-source.java
+mvn -B -ntp -DskipTests package dependency:build-classpath \
+  -Dmdep.outputFile=target/runtime-classpath.txt
+cd /path/to/oreslang-ai-agent-coordination-via-actors-demo
+export ORESLANG_COMPILER_ROOT=/path/to/oreslang-source.java
+export ORESLANG_COMPILER_SHA="$(git -C "$ORESLANG_COMPILER_ROOT" rev-parse HEAD)"
+export ORESLANG_DEMO_SHA="$(git rev-parse HEAD)"
+node --test tests/*.test.mjs
+node scripts/run-native-acceptance.mjs
+```
+
+The combined gate returns `NATIVE_CHECK_RESULT` (nine compiler checks),
+`NATIVE_GUEST_RESULT` (one executed program and byte-exact stdout), and
+`NATIVE_ACCEPTANCE_RESULT` (demo source HEAD/tree) **only after all checks
+succeed**. These are distinct from host-only Node.js reference-model tests.
+
+The SHA checks reject modified tracked source, but neither protect against a
+malicious untracked compiler class file nor attest Maven provenance.
+For release acceptance, require clean ephemeral build workspaces, full
+source-tree hash, reviewed dependencies, JDK 25 toolchain fingerprint,
+independent build logs and signed/verified evidence. Do not call Java
+`--check` runtime behavior proof: only the guest execution establishes
+the observed actor-mail stdout.
+
 ## Acceptance matrix
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
 | JS specification/model | Exact test file blobs + executed TAP | Locally executed (reference tests, not Oreslang) |
 | Native demo guest | Java OresMain 0 exit, exact oracle `1|2|evidence-ready|approved|executed`, verified compiler build SHA | Pending |
-| Eight preexisting `src/*.ores` actors | Parser, typechecker, ownership diagnostics and real execution for each actor | Pending |
+| Eight preexisting `src/*.ores` actors | Java OresMain `--check` each actor file, with diagnostics, then exercised behavioral cases | Harness committed; native checks pending |
 | Actor cross-message causality | Child send/receive with real worker-to-worker routing, timeout/cancel checks | Pending (main router only) |
 | Authenticated authorization | Capability checks, authenticated tool receipts, fail-closed unauthenticated instructions | Pending |
 | Durable recovery reference | Node.js fsync journal replay, SIGKILL and ambiguous receipt reconciliation | Executed locally; native/distributed recovery pending |

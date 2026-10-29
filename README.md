@@ -47,8 +47,21 @@ run:
 ```bash
 export ORESLANG_COMPILER_ROOT=/absolute/path/to/oreslang-source.java
 export ORESLANG_COMPILER_SHA="$(git -C "$ORESLANG_COMPILER_ROOT" rev-parse HEAD)"
-node scripts/run-native-guest.mjs
+node scripts/run-native-acceptance.mjs
 ```
+
+The combined gate also requires `ORESLANG_DEMO_SHA` to match the clean
+demo checkout's exact Git HEAD. Set it with:
+
+```sh
+export ORESLANG_DEMO_SHA="$(git rev-parse HEAD)"
+```
+
+It invokes the compiler's real `--check` mode on all eight actor files and
+the pipeline, then executes the pipeline and requires exact stdout. A clean,
+built compiler and dependencies remain prerequisites. See the acceptance doc
+for Maven build commands. The latest hosted CI job still has no executing
+steps, so this gate is **committed but not yet executed against Java**.
 
 See [P0 native acceptance and compiler build steps](docs/P0_NATIVE_ACCEPTANCE.md).
 The runner rejects missing/mismatched source revisions, missing build artifacts,
