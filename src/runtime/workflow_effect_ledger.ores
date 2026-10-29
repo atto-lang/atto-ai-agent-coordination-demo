@@ -64,6 +64,11 @@ define isolated actor WorkflowEffectLedgerActor as
     return self.handle_state(critical |s| -> {
       if receipt == "" || expected_epoch != s.transition_epoch ||
          s.transition_epoch >= 2147483646; then return false; fi
+      // An externally authenticated receipt must not settle two commands.
+      // Strings alone are not authentication; the adapter must prove origin.
+      for (const prior_receipt of s.result_receipts) {
+        if prior_receipt == receipt; then return false; fi
+      }
       let int i = 0;
       for (const existing of s.effect_keys) {
         if existing == effect_key && s.exact_revisions[i] == exact_revision &&

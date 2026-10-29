@@ -52,6 +52,11 @@ define isolated actor MemoryVerificationActor as
       if s.memory_ids[i] != id || s.revisions[i] != revision ||
          s.evidence_digests[i] != evidence_digest ||
          s.states[i] != 0; then return false; fi
+      // One externally authenticated receipt cannot be replayed as proof of
+      // multiple facts. This is deduplication, NOT receipt authentication.
+      for (const previous_receipt of s.verification_receipts) {
+        if previous_receipt == receipt_id; then return false; fi
+      }
       s.verification_receipts[i] = receipt_id;
       if accepted; then
         s.states[i] = 1;

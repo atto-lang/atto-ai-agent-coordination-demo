@@ -56,7 +56,9 @@ test('verification resolves a candidate only once and keeps superseded facts', (
     'replacement_ticket <= old_ticket',
     's.states[a] != 1 || s.states[b] != 1',
     's.states[a] = 3',
-    's.states[i] != 1'
+    's.states[i] != 1',
+    'for (const previous_receipt of s.verification_receipts)',
+    'if previous_receipt == receipt_id; then return false; fi'
   ]);
 });
 test('head invalidation is compare-and-swap, revision and epoch pinned', () => {

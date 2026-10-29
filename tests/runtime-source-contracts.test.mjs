@@ -61,6 +61,8 @@ test('dispatched effects remain unknown until reconciliation', () => {
     's.states[i] = 4',
     's.states[i] = 3',
     'receipt == ""',
+    'for (const prior_receipt of s.result_receipts)',
+    'if prior_receipt == receipt; then return false; fi',
     'expected_epoch != s.transition_epoch'
   ]) assert.ok(s.includes(x), x);
 });
