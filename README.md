@@ -70,7 +70,7 @@ demo checkout's exact Git HEAD. Set it with:
 export ORESLANG_DEMO_SHA="$(git rev-parse HEAD)"
 ```
 
-It invokes the compiler's real `--check` mode on all 22 actor files
+It invokes the compiler's real `--check` mode on all 23 actor files
 plus **three** guest fixtures, and also requires the Java type checker to reject
 an intentionally invalid `ActorMail<String>` send with a targeted diagnostic.
 All three executed guests must match byte-exact output oracles. A clean,
@@ -156,6 +156,31 @@ checks do not establish that execution.
 
 See [Step Functions integration audit and acceptance gates](docs/STEP_FUNCTION_ALIGNMENT_20261029.md).
 
+## Transactional inbox/outbox and native protocol (draft)
+
+The new `WorkflowInboxOutboxActor` is **pure Oreslang source**, with
+sealed in-memory state, version/epoch fencing and unique message, step,
+effect and receipt IDs. Its `prepared → in_doubt → committed/not_applied`
+protocol is implemented as an experimental **Node SQLite reference** using
+one transaction for inbox+outbox admission and a second durable, one-shot
+claim before external dispatch. Recovery never automatically resends an
+`in_doubt` effect.
+
+The local Node 22 suite passed **17/17** tests, including real subprocess
+`SIGKILL` before dispatch and after a simulated external effect, plus a
+two-process claim race. It also verifies external receipts **outside the
+SQLite writer lock**, then rechecks epoch/version and effect identity
+atomically before settlement. The provider is a test fixture; this does
+**not** constitute a real remote provider, distributed durable execution
+or native actor restart.
+
+The complete native compiler manifest now includes **at least 23 actors**
+(8 core, 9 memory, 6 runtime), three guest programs and a targeted
+negative mailbox-type fixture. The inbox/outbox actor has **not** been
+compiled, and the storage adapter is not yet connected to Oreslang.
+
+Read [Transactional inbox/outbox security and recovery gates](docs/TRANSACTIONAL_INBOX_OUTBOX.md).
+
 ## Authenticated local workflow control (reference only)
 
 A further hardening step adds HMAC-SHA256, short-lived, action-scoped
@@ -192,7 +217,7 @@ test, a real third-party provider, a production authenticated lease or
 multi-host exactly-once guarantee. See
 [Durable supervisor implementation and recovery limitations](docs/DURABLE_WORKFLOW_SUPERVISOR.md).
 
-Full native acceptance now discovers **at least 22** actor sources (8 core,
+Full native acceptance now discovers **at least 23** actor sources (8 core,
 9 memory, 5 runtime), 3 guest programs, and 1 expected negative mailbox
 typecheck; the new supervisor is a compiler-check target, **not** a fourth
 executed supervisor guest.
