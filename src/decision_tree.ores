@@ -3,85 +3,99 @@
 // prevents cycles and dangling targets without requiring recursive traversal.
 // Model-provided predicates are evaluated outside the actor by a trusted caller.
 define isolated actor DecisionTreeActor as
-  let Array<String> node_ids = new Array<String>();
-  let Array<String> terminal_ids = new Array<String>();
-  let Array<String> true_targets = new Array<String>();
-  let Array<String> false_targets = new Array<String>();
-  let int revision = 0;
+  state {
+    node_ids: Array<String> = new Array<String>();
+    terminal_ids: Array<String> = new Array<String>();
+    true_targets: Array<String> = new Array<String>();
+    false_targets: Array<String> = new Array<String>();
+    revision: int = 0;
+  }
 
   // Define terminal nodes before branches that reference them.
-  pub add_terminal(String id): bool {
-    if id == "" || self.node_ids.size + self.terminal_ids.size >= 256 ||
-       self.revision >= 2147483646; then return false; fi
-    for (const existing of self.terminal_ids) {
-      if existing == id; then return false; fi
-    }
-    for (const existing of self.node_ids) {
-      if existing == id; then return false; fi
-    }
-    self.terminal_ids.add(id);
-    self.revision = self.revision + 1;
-    return true;
+  pub add_terminal(String id): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if id == "" || s.node_ids.size + s.terminal_ids.size >= 256 ||
+         s.revision >= 2147483646; then return false; fi
+      for (const existing of s.terminal_ids) {
+        if existing == id; then return false; fi
+      }
+      for (const existing of s.node_ids) {
+        if existing == id; then return false; fi
+      }
+      s.terminal_ids.add(id);
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
   // Branches may point only to earlier inserted nodes. This forbids
   // forward references, self-edges and cycles by construction.
-  pub add_branch(String id, String on_true, String on_false): bool {
-    if id == "" || on_true == "" || on_false == "" ||
-       self.node_ids.size + self.terminal_ids.size >= 256 ||
-       self.revision >= 2147483646; then return false; fi
-    for (const existing of self.terminal_ids) {
-      if existing == id; then return false; fi
-    }
-    for (const existing of self.node_ids) {
-      if existing == id; then return false; fi
-    }
-    let bool true_known = false;
-    let bool false_known = false;
-    for (const existing of self.terminal_ids) {
-      if existing == on_true; then true_known = true; fi
-      if existing == on_false; then false_known = true; fi
-    }
-    for (const existing of self.node_ids) {
-      if existing == on_true; then true_known = true; fi
-      if existing == on_false; then false_known = true; fi
-    }
-    if !true_known || !false_known; then return false; fi
-    self.node_ids.add(id);
-    self.true_targets.add(on_true);
-    self.false_targets.add(on_false);
-    self.revision = self.revision + 1;
-    return true;
+  pub add_branch(String id, String on_true, String on_false): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if id == "" || on_true == "" || on_false == "" ||
+         s.node_ids.size + s.terminal_ids.size >= 256 ||
+         s.revision >= 2147483646; then return false; fi
+      for (const existing of s.terminal_ids) {
+        if existing == id; then return false; fi
+      }
+      for (const existing of s.node_ids) {
+        if existing == id; then return false; fi
+      }
+      let bool true_known = false;
+      let bool false_known = false;
+      for (const existing of s.terminal_ids) {
+        if existing == on_true; then true_known = true; fi
+        if existing == on_false; then false_known = true; fi
+      }
+      for (const existing of s.node_ids) {
+        if existing == on_true; then true_known = true; fi
+        if existing == on_false; then false_known = true; fi
+      }
+      if !true_known || !false_known; then return false; fi
+      s.node_ids.add(id);
+      s.true_targets.add(on_true);
+      s.false_targets.add(on_false);
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
   pub next(String id, bool predicate,
-               int required_revision): Result<String, String> {
-    if required_revision != self.revision; then
-      return Err("decision graph changed");
-    fi
-    let int i = 0;
-    for (const existing of self.node_ids) {
-      if existing == id; then
-        if predicate; then return Ok(self.true_targets[i]); fi
-        return Ok(self.false_targets[i]);
+               int required_revision): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
+      if required_revision != s.revision; then
+        return Err("decision graph changed");
       fi
-      i = i + 1;
-    }
-    return Err("not a branch");
+      let int i = 0;
+      for (const existing of s.node_ids) {
+        if existing == id; then
+          if predicate; then return Ok(s.true_targets[i]); fi
+          return Ok(s.false_targets[i]);
+        fi
+        i = i + 1;
+      }
+      return Err("not a branch");
+    });
   }
 
-  pub is_terminal(String id, int required_revision): Result<bool, String> {
-    if required_revision != self.revision; then
-      return Err("decision graph changed");
-    fi
-    for (const existing of self.terminal_ids) {
-      if existing == id; then return Ok(true); fi
-    }
-    for (const existing of self.node_ids) {
-      if existing == id; then return Ok(false); fi
-    }
-    return Err("unknown decision node");
+  pub is_terminal(String id, int required_revision): Result<bool, String> with state.read {
+    return self.handle_state(|s| -> {
+      if required_revision != s.revision; then
+        return Err("decision graph changed");
+      fi
+      for (const existing of s.terminal_ids) {
+        if existing == id; then return Ok(true); fi
+      }
+      for (const existing of s.node_ids) {
+        if existing == id; then return Ok(false); fi
+      }
+      return Err("unknown decision node");
+    });
   }
 
-  pub current_revision(): int { return self.revision; }
+  pub current_revision(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.revision;
+    });
+  }
 end
