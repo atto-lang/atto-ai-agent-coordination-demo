@@ -65,6 +65,9 @@ check_tree "$compiler" "$ORESLANG_COMPILER_SHA"
     # Verify the actual native SQLite transaction backend independently.
     # This is NOT a linked Oreslang guest execution.
     bash scripts/check-native-sqlite.sh
+    # Trusted Java host-mailbox -> JNI -> native storage, with killed process.
+    # This does NOT prove a .ores-to-host-storage call.
+    bash scripts/check-workflow-mailbox.sh
     # Full gate includes sealed actor sources, storage port, typed-negative and
     # all three native guest stdout oracles.
     node scripts/run-native-acceptance.mjs
@@ -76,6 +79,6 @@ if [[ "$scope" == "guest-only" ]]; then
   printf 'LOCAL_NATIVE_GUEST_SMOKE_RESULT passed=true demo_head=%s compiler_head=%s scope=guest_only_no_sealed_actor_validation\n' \
     "$ORESLANG_DEMO_SHA" "$ORESLANG_COMPILER_SHA"
 else
-  printf 'LOCAL_NATIVE_CI_RESULT passed=true demo_head=%s compiler_head=%s scope=Java_native_checks_and_two_guests\n' \
+  printf 'LOCAL_NATIVE_CI_RESULT passed=true demo_head=%s compiler_head=%s scope=Java_native_checks_and_three_guests_plus_host_storage\n' \
     "$ORESLANG_DEMO_SHA" "$ORESLANG_COMPILER_SHA"
 fi
