@@ -239,3 +239,10 @@ test('claim storage faults fail closed without model invocation', async t => {
   assert.equal(await h.make().dispatch(manifest()), false);
   assert.equal(sends,0);
 });
+
+test('parallel bridges with distinct signed receipts allow one durable dispatch claim', async t => {
+  const h = harness(t, {uniqueReceipts:true});
+  const results = await Promise.all(Array.from({length:16}, () => h.make().dispatch(manifest())));
+  assert.equal(results.filter(Boolean).length, 1);
+  assert.equal(h.submits, 1);
+});
