@@ -39,3 +39,14 @@ Tests cover underreported token estimates, byte-heavy Unicode, invalid surrogate
 Required before promotion: independently authenticated verifier; real tokenizer and position-sensitive retrieval/model quality experiments; prompt-injection and spoofing at the actual tool dispatch boundary; exact-head Actions with nonzero executed steps; native compiler/guest execution and state-loan semantics on Java/GraalVM, then LLVM/.NET/Wasm/Forge when applicable; durable cancellation, cross-tenant quotas, restart and idempotent side-effect tests. No performance improvement or language parity may be inferred from Node reference passes.
 
 Track existing issues #4 (runner admission), #7 (native sealed-state compiler), and #9 (authority, durability and quotas). Existing PRs #1/#2/#3 have independent unmerged dependencies. Never mirror private source to another organization without explicit separate authorization. Keep this PR **DRAFT**, unmerged until independent review.
+
+
+## Context-position evaluation harness (research-to-code)
+
+reference/context-position-eval.mjs adds a bounded **offline scoring harness** inspired by Liu et al. It takes fixtures with one gold evidence ID plus distractors, repositions that gold evidence at first/middle/last, invokes an injected runModel callback, and reports exact answer + gold citation + zero requested tool calls for each position. This is **not** a benchmark result from a deployed LLM: the included tests exercise a deterministic simulated model that intentionally fails in the middle.
+
+Run the reference-only cases using:
+
+    node --test tests/context-position-eval.test.mjs
+
+A future independently approved model run must pin a real model/version, prompt template, tokenizer, retrieval corpus, fixture SHA, evaluation/grading rules, generation settings, evidence authorization, latency/cost and output receipts. Compare across at least three evidence positions; report per-position accuracy and citations rather than claiming a fixed 'lost in the middle' effect for all models. Tool outputs are still untrusted and any model-requested tool calls must be independently denied or authorized at a separate dispatch boundary. This harness never executes tools.
