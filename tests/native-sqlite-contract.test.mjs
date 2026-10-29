@@ -62,6 +62,7 @@ test('native test runner has real compilation, timeout and fail-closed dependenc
   assert.match(build,/-Wall -Wextra -Werror/);
   assert.match(build,/pkg-config --exists sqlite3/);
   assert.match(build,/tests\/native_sqlite_test\.cpp/);
+  assert.match(build,/timeout --kill-after=5s 30s/);
   const syntax=spawnSync('bash',['-n',new URL('../scripts/check-native-sqlite.sh',import.meta.url).pathname],
     {encoding:'utf8',timeout:3000});
   assert.equal(syntax.status,0,syntax.stderr);
