@@ -65,6 +65,9 @@ test('authenticated, data-only model handoff with exact provenance and bounded t
   assert.equal(await h.make().dispatch(manifest()),true);
   assert.equal(h.submits,1);
   assert.equal(h.received.classification,'untrusted_context_data');
+  assert.equal(h.received.dispatch_id, 'dispatch-a');
+  assert.equal(h.received.context_sha256,
+    createHash('sha256').update(h.received.context_json,'utf8').digest('hex'));
   const parsed = JSON.parse(h.received.context_json);
   assert.equal(parsed.records[0].excerpt,excerpt);
   assert.equal(parsed.records[0].memory_id,'mem-a');
@@ -194,4 +197,45 @@ test('missing atomic dispatch claim, invalid dispatch scope and non-true claims 
   const d = harness(t,{claimDispatch:async()=>({approved:true})});
   assert.equal(await d.make().dispatch(manifest()),false);
   assert.equal(d.submits,0);
+});
+
+test('policy revocation after durable claim denies final dispatch and remains claimed', async t => {
+  let policyReads = 0, claimReads = 0, sends = 0;
+  const h = harness(t, {
+    uniqueReceipts: true,
+    authorizeDispatch: async () => ++policyReads === 1,
+    claimDispatch: async () => { claimReads++; return true; },
+    submitModelData: async () => { sends++; }
+  });
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(policyReads, 2);
+  assert.equal(claimReads, 1);
+  assert.equal(sends, 0);
+});
+test('revision changing during durable claim blocks model handoff', async t => {
+  let current = true, sends = 0;
+  const h = harness(t, {
+    isCurrentRevision: async () => current,
+    claimDispatch: async () => { current = false; return true; },
+    submitModelData: async () => { sends++; }
+  });
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(sends, 0);
+});
+test('changed serialized context cannot reuse logical dispatch ID', async t => {
+  const h = harness(t, { uniqueReceipts: true });
+  assert.equal(await h.make().dispatch(manifest()), true);
+  h.props.resolveExcerpt = async ({memory_id,evidence_ref}) =>
+    ({memory_id,evidence_ref,excerpt:'Different bounded content'});
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(h.submits, 1);
+});
+test('claim storage faults fail closed without model invocation', async t => {
+  let sends = 0;
+  const h = harness(t,{
+    claimDispatch:async()=>{throw Error('claim durability uncertain')},
+    submitModelData:async()=>{sends++}
+  });
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(sends,0);
 });
