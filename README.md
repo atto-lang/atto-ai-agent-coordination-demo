@@ -67,6 +67,8 @@ language keyword. See [Distributed intelligence graph](docs/DISTRIBUTED_INTELLIG
   MCP, A2A, client SDKs, authenticated logical actor generation and full
   JSON Schema runtime admission remain future work.
 
+Run the strictly labeled JavaScript-only Map-versus-serialized-queue microbenchmark via `node scripts/bench-reference.mjs`. Its figures do **not** benchmark Oreslang actors or predict production performance.
+
 A local demonstration gateway (Node.js 22+) requires an explicit 32+ byte token
 and 40-hex revision, and binds to `127.0.0.1` only:
 
@@ -86,7 +88,7 @@ tool-execution or inference endpoint.
 node --test tests/*.test.mjs
 ```
 
-The suite combines source-contract assertions, six JavaScript DAG/cache reference-model cases, six independent **journal/recovery reference-model** tests (including a forced `SIGKILL`), four authenticated gateway tests, two protocol-schema tests and guest-runner preflight tests. These are NOT native Oreslang execution or backend parity evidence. Run results must be reported separately from GitHub runner admission.
+The suite combines source-contract assertions, six JavaScript DAG/cache reference-model cases, seven independent **journal/recovery reference-model** tests (including two forced `SIGKILL` windows), four authenticated gateway tests, two protocol-schema tests and guest-runner preflight tests. These are NOT native Oreslang execution or backend parity evidence. Run results must be reported separately from GitHub runner admission.
 
 ## Userland constraints
 
