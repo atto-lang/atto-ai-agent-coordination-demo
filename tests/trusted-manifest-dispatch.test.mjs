@@ -200,16 +200,16 @@ test('missing atomic dispatch claim, invalid dispatch scope and non-true claims 
 });
 
 test('policy revocation after durable claim denies final dispatch and remains claimed', async t => {
-  let policyReads = 0, claimReads = 0, sends = 0;
+  let policyReads = 0, sends = 0;
   const h = harness(t, {
     uniqueReceipts: true,
-    authorizeDispatch: async () => ++policyReads === 1,
-    claimDispatch: async () => { claimReads++; return true; },
+    authorizeDispatch: async () => ++policyReads !== 2,
     submitModelData: async () => { sends++; }
   });
   assert.equal(await h.make().dispatch(manifest()), false);
-  assert.equal(policyReads, 2);
-  assert.equal(claimReads, 1);
+  assert.equal(policyReads, 2, 'post-claim policy must be checked');
+  h.props.authorizeDispatch = async () => true; // policy restored, claim still spent
+  assert.equal(await h.make().dispatch(manifest()), false);
   assert.equal(sends, 0);
 });
 test('revision changing during durable claim blocks model handoff', async t => {
