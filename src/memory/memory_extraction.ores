@@ -1,0 +1,78 @@
+// Explicit staging of model- or parser-extracted candidate claims.
+// Candidate text remains untrusted, even after local review acknowledgement.
+// Extraction itself is performed by an external bounded worker/adapter.
+isoactor MemoryExtractionActor {
+  let Array<String> candidate_ids = new Array<String>();
+  let Array<String> event_ids = new Array<String>();
+  let Array<String> repositories = new Array<String>();
+  let Array<String> branches = new Array<String>();
+  let Array<String> revisions = new Array<String>();
+  let Array<String> subjects = new Array<String>();
+  let Array<String> excerpts = new Array<String>();
+  let Array<int> kinds = new Array<int>();
+  let Array<int> states = new Array<int>();
+
+  // kinds: 1 semantic, 2 episodic, 3 procedural, 4 evidence.
+  // States: 0 candidate, 1 forwarded-for-verification, 2 discarded.
+  pub fnc stage(String id, String event_id, String repo,
+                String branch, String revision, String subject,
+                String excerpt, int kind): bool {
+    if id == "" || event_id == "" || repo == "" || branch == "" ||
+       revision == "" || subject == "" || excerpt == "" ||
+       kind < 1 || kind > 4 || self.candidate_ids.size >= 1024; then
+      return false;
+    fi
+    for (const existing of self.candidate_ids) {
+      if existing == id; then return false; fi
+    }
+    self.candidate_ids.add(id);
+    self.event_ids.add(event_id);
+    self.repositories.add(repo);
+    self.branches.add(branch);
+    self.revisions.add(revision);
+    self.subjects.add(subject);
+    self.excerpts.add(excerpt);
+    self.kinds.add(kind);
+    self.states.add(0);
+    return true;
+  }
+
+  pub fnc finish(String id, String event_id,
+                 bool forward): bool {
+    let int i = 0;
+    for (const existing of self.candidate_ids) {
+      if existing == id; then
+        if self.event_ids[i] != event_id || self.states[i] != 0; then
+          return false;
+        fi
+        if forward; then
+          self.states[i] = 1;
+        else
+          self.states[i] = 2;
+        fi
+        return true;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // Forwarded != verified. The downstream verification actor owns promotion.
+  pub fnc forwarded_excerpt(String id, String event_id,
+                            String revision): Result<String, String> {
+    let int i = 0;
+    for (const existing of self.candidate_ids) {
+      if existing == id; then
+        if self.states[i] != 1 || self.event_ids[i] != event_id ||
+           self.revisions[i] != revision; then
+          return Err("candidate has not been forwarded");
+        fi
+        return Ok(self.excerpts[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("unknown candidate");
+  }
+
+  pub fnc size(): int { return self.candidate_ids.size; }
+}

@@ -1,0 +1,52 @@
+// Declarative one-hop deduplication map. No hidden summarization or LLM calls.
+// A verifier must approve canonical memory IDs before they are registered.
+// Reject chains and cycles: a canonical may never later become an alias.
+isoactor MemoryConsolidationActor {
+  let Array<String> aliases = new Array<String>();
+  let Array<String> canonicals = new Array<String>();
+  let Array<String> repositories = new Array<String>();
+  let Array<String> branches = new Array<String>();
+  let Array<String> revisions = new Array<String>();
+
+  pub fnc link_duplicate(String alias_id, String canonical_id,
+                         String repo, String branch,
+                         String revision): bool {
+    if alias_id == "" || canonical_id == "" || alias_id == canonical_id ||
+       repo == "" || branch == "" || revision == "" ||
+       self.aliases.size >= 512; then return false; fi
+    let int i = 0;
+    for (const existing of self.aliases) {
+      if self.repositories[i] == repo && self.branches[i] == branch &&
+         self.revisions[i] == revision; then
+        if existing == alias_id || existing == canonical_id ||
+           self.canonicals[i] == alias_id; then return false; fi
+      fi
+      i = i + 1;
+    }
+    self.aliases.add(alias_id);
+    self.canonicals.add(canonical_id);
+    self.repositories.add(repo);
+    self.branches.add(branch);
+    self.revisions.add(revision);
+    return true;
+  }
+
+  pub fnc resolve(String id, String repo, String branch,
+                  String revision): Result<String, String> {
+    if id == "" || repo == "" || branch == "" || revision == ""; then
+      return Err("invalid memory scope");
+    fi
+    let int i = 0;
+    for (const existing of self.aliases) {
+      if existing == id && self.repositories[i] == repo &&
+         self.branches[i] == branch &&
+         self.revisions[i] == revision; then
+        return Ok(self.canonicals[i]);
+      fi
+      i = i + 1;
+    }
+    return Ok(id);
+  }
+
+  pub fnc size(): int { return self.aliases.size; }
+}

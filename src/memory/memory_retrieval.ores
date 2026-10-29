@@ -1,0 +1,87 @@
+// Bounded materialized read model for previously verified memories.
+// Only a capability-authorized indexer may publish or revoke records.
+// This actor cannot independently authenticate a caller or receipt string.
+isoactor MemoryRetrievalActor {
+  let Array<String> ids = new Array<String>();
+  let Array<String> repositories = new Array<String>();
+  let Array<String> branches = new Array<String>();
+  let Array<String> revisions = new Array<String>();
+  let Array<String> subjects = new Array<String>();
+  let Array<String> contents = new Array<String>();
+  let Array<String> evidence_refs = new Array<String>();
+  let Array<bool> active = new Array<bool>();
+
+  pub fnc publish(String id, String repo, String branch, String revision,
+                  String subject, String content,
+                  String evidence_ref): bool {
+    if id == "" || repo == "" || branch == "" || revision == "" ||
+       subject == "" || content == "" || evidence_ref == "" ||
+       self.ids.size >= 1024; then return false; fi
+    for (const existing of self.ids) {
+      if existing == id; then return false; fi
+    }
+    self.ids.add(id);
+    self.repositories.add(repo);
+    self.branches.add(branch);
+    self.revisions.add(revision);
+    self.subjects.add(subject);
+    self.contents.add(content);
+    self.evidence_refs.add(evidence_ref);
+    self.active.add(true);
+    return true;
+  }
+
+  // A superseded or rejected record must be explicitly withdrawn.
+  pub fnc withdraw(String id, String evidence_ref): bool {
+    let int i = 0;
+    for (const existing of self.ids) {
+      if existing == id; then
+        if self.evidence_refs[i] != evidence_ref || !self.active[i]; then
+          return false;
+        fi
+        self.active[i] = false;
+        return true;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  // Exact subject + branch + revision; no fuzzy or embedding claim.
+  // Consumers must separately check MemoryInvalidationActor before acting.
+  pub fnc recall_ids(String repo, String branch, String revision,
+                     String subject, int limit): Result<Array<String>, String> {
+    if repo == "" || branch == "" || revision == "" || subject == "" ||
+       limit < 1 || limit > 16; then return Err("invalid recall scope"); fi
+    let mut Array<String> found = new Array<String>();
+    let int i = 0;
+    for (const existing of self.ids) {
+      if self.active[i] && self.repositories[i] == repo &&
+         self.branches[i] == branch && self.revisions[i] == revision &&
+         self.subjects[i] == subject && found.size < limit; then
+        found.add(existing);
+      fi
+      i = i + 1;
+    }
+    return Ok(found);
+  }
+
+  pub fnc read(String id, String repo, String branch,
+               String revision, String evidence_ref): Result<String, String> {
+    let int i = 0;
+    for (const existing of self.ids) {
+      if existing == id; then
+        if !self.active[i] || self.repositories[i] != repo ||
+           self.branches[i] != branch || self.revisions[i] != revision ||
+           self.evidence_refs[i] != evidence_ref; then
+          return Err("stale or unverified memory view");
+        fi
+        return Ok(self.contents[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("memory unavailable");
+  }
+
+  pub fnc size(): int { return self.ids.size; }
+}

@@ -19,6 +19,16 @@ A **userland, native Oreslang** experiment in long-lived isolated actors for AI 
 
 All actor state is owned by an `isoactor`. No new compiler keyword or special actor flavor is assumed. Graph nodes are compact records, *not* individually scheduled actors.
 
+## Coding-agent memory pipeline
+
+The second userland module introduces **nine additional memory actors** under `src/memory/`:
+
+- `MemoryIngestionActor`, `MemoryExtractionActor`, and `MemoryVerificationActor` for event envelopes, untrusted candidate facts, and explicit evidence-based promotion.
+- `MemoryConsolidationActor`, `MemoryIndexActor`, and `MemoryRetrievalActor` for scoped deduplication, revision-specific indexing, and a bounded read model.
+- `MemoryInvalidationActor`, `ContextAssemblyActor`, and `MemoryCheckpointManifestActor` for branch-head CAS, token-estimate-bounded context packaging, and references to externally persisted snapshots.
+
+**No persistent storage, automated LLM extraction, authenticated network transport, actual tokenization, or cross-actor transaction is implemented yet.** This is a bounded, in-memory actor-contract prototype. Read the [memory-pipeline architecture](docs/MEMORY_PIPELINE.md) and [native acceptance scenarios](tests/memory-guest-acceptance.md).
+
 ## Example: repository intelligence graph
 
 A code-indexer ingests symbols, files and dependency edges into a `KnowledgeGraphActor` shard, then caches revision-keyed query results in a `KnowledgeCacheActor`. A code-review agent requests neighbors, asks `DecisionTreeActor` which checks to run, and opens a `DecisionGateActor` on the exact commit SHA. An authorized control-plane caller supplies actual executed CI evidence and independently authenticated approval; the actor must reject zero-step checks, stale commits or stale epochs. `AgentCoordinatorActor` limits concurrent tasks, while `AgentWorkflowActor` tracks the state of one action.
@@ -28,7 +38,7 @@ See [architecture](docs/ARCHITECTURE.md), [invariants and trust boundaries](docs
 ## Validation
 
 ```sh
-node --test tests/actor-source-contracts.test.mjs
+node --test tests/*.test.mjs
 ```
 
 These are **source/structure checks only**, *not* proof of Oreslang compilation or runtime semantics. The workflow runs in this repository without external source mirroring. Native compiler execution must use authorized environments and be reported separately, including actual job-step evidence.

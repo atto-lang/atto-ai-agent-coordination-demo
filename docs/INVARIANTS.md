@@ -25,3 +25,7 @@ The prototype assumes the caller has already verified the identity of a remote w
 
 ## Validation language
 A passing JS source-contract check only proves designated structural properties exist as text. It is not a parser, type-checker, behavioral unit test, CI runner-admission result, or application benchmark. Report these independently.
+
+## Memory subsystem
+
+Nine additional memory actors live in `src/memory/`. Their detailed limits, trust boundaries, and revision requirements are specified in [MEMORY_PIPELINE.md](MEMORY_PIPELINE.md). The memory pipeline introduces no native durability or authenticated verification. Only independently validated facts may be published to retrieval, and branch-head generation must be checked again before tool actions.

@@ -1,0 +1,101 @@
+// Candidate facts with explicit review states. Verification requires an
+// authenticated external verifier; passing a receipt string is NOT proof.
+isoactor MemoryVerificationActor {
+  let Array<String> memory_ids = new Array<String>();
+  let Array<String> repositories = new Array<String>();
+  let Array<String> branches = new Array<String>();
+  let Array<String> subjects = new Array<String>();
+  let Array<String> revisions = new Array<String>();
+  let Array<String> evidence_digests = new Array<String>();
+  let Array<String> contents = new Array<String>();
+  let Array<String> verification_receipts = new Array<String>();
+  let Array<int> states = new Array<int>();
+
+  // State 0 pending, 1 verified, 2 rejected, 3 superseded.
+  pub fnc propose(String id, String repo, String branch,
+                  String subject, String revision,
+                  String evidence_digest,
+                  String content): Result<int, String> {
+    if id == "" || repo == "" || branch == "" || subject == "" ||
+       revision == "" || evidence_digest == "" || content == ""; then
+      return Err("invalid candidate");
+    fi
+    if self.memory_ids.size >= 2048; then return Err("fact ledger full"); fi
+    for (const existing of self.memory_ids) {
+      if existing == id; then return Err("duplicate memory id"); fi
+    }
+    self.memory_ids.add(id);
+    self.repositories.add(repo);
+    self.branches.add(branch);
+    self.subjects.add(subject);
+    self.revisions.add(revision);
+    self.evidence_digests.add(evidence_digest);
+    self.contents.add(content);
+    self.verification_receipts.add("");
+    self.states.add(0);
+    return Ok(self.memory_ids.size);
+  }
+
+  // Called ONLY by a capability-authorized verifier after independently
+  // validating source provenance and the exact Git revision.
+  pub fnc resolve(int ticket, String id, String revision,
+                  String evidence_digest, String receipt_id,
+                  bool accepted): bool {
+    if ticket <= 0 || ticket > self.memory_ids.size ||
+       receipt_id == ""; then return false; fi
+    val int i = ticket - 1;
+    if self.memory_ids[i] != id || self.revisions[i] != revision ||
+       self.evidence_digests[i] != evidence_digest ||
+       self.states[i] != 0; then return false; fi
+    self.verification_receipts[i] = receipt_id;
+    if accepted; then
+      self.states[i] = 1;
+    else
+      self.states[i] = 2;
+    fi
+    return true;
+  }
+
+  // Allow replacement only by another verified record with the same
+  // repository/branch/subject. Never overwrite the older evidence.
+  pub fnc supersede(int old_ticket, int replacement_ticket): bool {
+    if old_ticket <= 0 || replacement_ticket <= 0 ||
+       old_ticket > self.memory_ids.size ||
+       replacement_ticket > self.memory_ids.size ||
+       old_ticket == replacement_ticket; then return false; fi
+    val int a = old_ticket - 1;
+    val int b = replacement_ticket - 1;
+    if self.states[a] != 1 || self.states[b] != 1 ||
+       self.repositories[a] != self.repositories[b] ||
+       self.branches[a] != self.branches[b] ||
+       self.subjects[a] != self.subjects[b]; then return false; fi
+    self.states[a] = 3;
+    return true;
+  }
+
+  pub fnc verified_content(int ticket, String id, String revision,
+                           String evidence_digest): Result<String, String> {
+    if ticket <= 0 || ticket > self.memory_ids.size; then
+      return Err("unknown memory ticket");
+    fi
+    val int i = ticket - 1;
+    if self.memory_ids[i] != id || self.revisions[i] != revision ||
+       self.evidence_digests[i] != evidence_digest ||
+       self.states[i] != 1; then
+      return Err("not a current verified fact");
+    fi
+    return Ok(self.contents[i]);
+  }
+
+  pub fnc state_of(int ticket, String id): Result<int, String> {
+    if ticket <= 0 || ticket > self.memory_ids.size; then
+      return Err("unknown memory ticket");
+    fi
+    if self.memory_ids[ticket - 1] != id; then
+      return Err("memory identity mismatch");
+    fi
+    return Ok(self.states[ticket - 1]);
+  }
+
+  pub fnc size(): int { return self.memory_ids.size; }
+}

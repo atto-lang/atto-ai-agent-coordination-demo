@@ -19,4 +19,4 @@ jobs:
       - name: Source-only contract checks (NOT native Oreslang tests)
         run: |
           node --version
-          node --test tests/actor-source-contracts.test.mjs
+          node --test tests/*.test.mjs

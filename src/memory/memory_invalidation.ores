@@ -1,0 +1,65 @@
+// One in-memory head pointer per repository + branch, with optimistic CAS.
+// This protects against stale HEAD reads, not against stale historical facts.
+isoactor MemoryInvalidationActor {
+  let Array<String> repositories = new Array<String>();
+  let Array<String> branches = new Array<String>();
+  let Array<String> revisions = new Array<String>();
+  let Array<int> generations = new Array<int>();
+
+  pub fnc register(String repo, String branch,
+                   String revision): Result<int, String> {
+    if repo == "" || branch == "" || revision == ""; then
+      return Err("invalid scope");
+    fi
+    if self.repositories.size >= 128; then return Err("scope full"); fi
+    let int i = 0;
+    for (const existing of self.repositories) {
+      if existing == repo && self.branches[i] == branch; then
+        return Err("scope already registered");
+      fi
+      i = i + 1;
+    }
+    self.repositories.add(repo);
+    self.branches.add(branch);
+    self.revisions.add(revision);
+    self.generations.add(1);
+    return Ok(1);
+  }
+
+  pub fnc advance(String repo, String branch, String expected_revision,
+                  String new_revision, int expected_generation): Result<int, String> {
+    if new_revision == "" || expected_revision == new_revision; then
+      return Err("invalid head transition");
+    fi
+    let int i = 0;
+    for (const existing of self.repositories) {
+      if existing == repo && self.branches[i] == branch; then
+        if self.revisions[i] != expected_revision ||
+           self.generations[i] != expected_generation ||
+           self.generations[i] >= 2147483646; then
+          return Err("stale head transition");
+        fi
+        self.revisions[i] = new_revision;
+        self.generations[i] = self.generations[i] + 1;
+        return Ok(self.generations[i]);
+      fi
+      i = i + 1;
+    }
+    return Err("unknown scope");
+  }
+
+  pub fnc is_current(String repo, String branch,
+                     String revision, int generation): bool {
+    let int i = 0;
+    for (const existing of self.repositories) {
+      if existing == repo && self.branches[i] == branch; then
+        return self.revisions[i] == revision &&
+          self.generations[i] == generation;
+      fi
+      i = i + 1;
+    }
+    return false;
+  }
+
+  pub fnc scope_count(): int { return self.repositories.size; }
+}

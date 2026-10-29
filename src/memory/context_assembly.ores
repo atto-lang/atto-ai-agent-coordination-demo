@@ -1,0 +1,81 @@
+// One actor per task context. Bounded selection of already-verified excerpts.
+// Token counts are caller-provided estimates; this is NOT a tokenizer or
+// security boundary for prompt injection. All excerpts are untrusted data.
+isoactor ContextAssemblyActor {
+  let String task_id = "";
+  let String revision = "";
+  let int budget = 0;
+  let int remaining = 0;
+  let bool started = false;
+  let bool sealed = false;
+  let Array<String> memory_ids = new Array<String>();
+  let Array<String> excerpts = new Array<String>();
+  let Array<String> evidence_refs = new Array<String>();
+
+  pub fnc begin(String task, String exact_revision,
+                int token_budget): bool {
+    if self.started || task == "" || exact_revision == "" ||
+       token_budget < 1 || token_budget > 16384; then return false; fi
+    self.task_id = task;
+    self.revision = exact_revision;
+    self.budget = token_budget;
+    self.remaining = token_budget;
+    self.started = true;
+    return true;
+  }
+
+  pub fnc add(String task, String exact_revision, String memory_id,
+              String evidence_ref, String excerpt,
+              int estimated_tokens): bool {
+    if !self.started || self.sealed || task != self.task_id ||
+       exact_revision != self.revision || memory_id == "" ||
+       evidence_ref == "" || excerpt == "" ||
+       estimated_tokens <= 0 || estimated_tokens > self.remaining ||
+       self.memory_ids.size >= 24; then return false; fi
+    for (const existing of self.memory_ids) {
+      if existing == memory_id; then return false; fi
+    }
+    self.memory_ids.add(memory_id);
+    self.evidence_refs.add(evidence_ref);
+    self.excerpts.add(excerpt);
+    self.remaining = self.remaining - estimated_tokens;
+    return true;
+  }
+
+  pub fnc seal(String task, String exact_revision): bool {
+    if !self.started || self.sealed || task != self.task_id ||
+       exact_revision != self.revision; then return false; fi
+    self.sealed = true;
+    return true;
+  }
+
+  // Return separate arrays, not a trusted system prompt. The caller is
+  // responsible for labeling evidence and applying a real tokenizer.
+  pub fnc selected_ids(String task, String exact_revision): Result<Array<String>, String> {
+    if !self.sealed || task != self.task_id ||
+       exact_revision != self.revision; then return Err("context not sealed"); fi
+    let mut Array<String> copy = new Array<String>();
+    for (const id of self.memory_ids) { copy.add(id); }
+    return Ok(copy);
+  }
+
+  pub fnc selected_excerpts(String task,
+                            String exact_revision): Result<Array<String>, String> {
+    if !self.sealed || task != self.task_id ||
+       exact_revision != self.revision; then return Err("context not sealed"); fi
+    let mut Array<String> copy = new Array<String>();
+    for (const excerpt of self.excerpts) { copy.add(excerpt); }
+    return Ok(copy);
+  }
+
+  pub fnc selected_evidence(String task,
+                            String exact_revision): Result<Array<String>, String> {
+    if !self.sealed || task != self.task_id ||
+       exact_revision != self.revision; then return Err("context not sealed"); fi
+    let mut Array<String> copy = new Array<String>();
+    for (const evidence of self.evidence_refs) { copy.add(evidence); }
+    return Ok(copy);
+  }
+
+  pub fnc remaining_budget(): int { return self.remaining; }
+}
