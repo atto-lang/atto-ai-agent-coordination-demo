@@ -4,6 +4,11 @@ export function auditActorSource(source) {
   const problems = [];
   const declaration = source.match(/^define isolated actor (\w+) as$/m);
   if (!declaration) problems.push('missing isolated actor declaration');
+  // One state schema must belong to the *only* actor in this file.
+  // A second actor without a schema must not piggyback on a valid first one.
+  const actorHeaders = [...source.matchAll(/^define\s+[^\n]*\b(?:actor|isoactor)\b[^\n]*$/gm)];
+  if (actorHeaders.length !== 1)
+    problems.push('expected exactly one actor declaration');
   const schema = source.match(/^  state \{\n([\s\S]*?)^  \}$/m);
   if (!schema || [...source.matchAll(/^  state \{/gm)].length !== 1)
     problems.push('expected exactly one state schema');
@@ -14,7 +19,7 @@ export function auditActorSource(source) {
       problems.push('bad or duplicate state field: ' + line.trim());
     else fields.set(field[1], field[2]);
   }
-  if (/^  let /m.test(source) || /\bisoactor\b|\bpub\s+fnc\b/.test(source))
+  if (/^  (?:let|val|var|mut|const|final)\s/m.test(source) || /\bisoactor\b|\bpub\s+fnc\b/.test(source))
     problems.push('legacy actor fields or declaration');
   if (/\bself\.(?!handle_state\()/g.test(source))
     problems.push('direct actor state access');
