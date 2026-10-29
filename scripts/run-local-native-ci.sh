@@ -10,6 +10,8 @@ demo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 : "${ORESLANG_DEMO_SHA:?set exact 40-hex ORESLANG_DEMO_SHA}"
 [[ "$ORESLANG_COMPILER_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid compiler SHA"
 [[ "$ORESLANG_DEMO_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid demo SHA"
+scope="${ORESLANG_NATIVE_SCOPE:-full}"
+[[ "$scope" == "full" || "$scope" == "guest-only" ]] || fail "invalid native scope"
 command -v java >/dev/null || fail "java unavailable"
 command -v mvn >/dev/null || fail "Maven unavailable"
 command -v node >/dev/null || fail "Node unavailable"
@@ -55,9 +57,21 @@ check_tree "$compiler" "$ORESLANG_COMPILER_SHA"
 (
   cd "$demo"
   node --test tests/*.test.mjs
-  node scripts/run-native-acceptance.mjs
+  if [[ "$scope" == "guest-only" ]]; then
+    # Java-main-supported messaging can be verified independently of the
+    # separate sealed-state compiler integration still in draft.
+    node scripts/run-native-guest.mjs
+  else
+    # Full gate includes sealed actors, negative typing and both guest tests.
+    node scripts/run-native-acceptance.mjs
+  fi
 )
 check_tree "$demo" "$ORESLANG_DEMO_SHA"
 check_tree "$compiler" "$ORESLANG_COMPILER_SHA"
-printf 'LOCAL_NATIVE_CI_RESULT passed=true demo_head=%s compiler_head=%s scope=Java_native_checks_and_two_guests\n' \
- "$ORESLANG_DEMO_SHA" "$ORESLANG_COMPILER_SHA"
+if [[ "$scope" == "guest-only" ]]; then
+  printf 'LOCAL_NATIVE_GUEST_SMOKE_RESULT passed=true demo_head=%s compiler_head=%s scope=guest_only_no_sealed_actor_validation\n' \
+    "$ORESLANG_DEMO_SHA" "$ORESLANG_COMPILER_SHA"
+else
+  printf 'LOCAL_NATIVE_CI_RESULT passed=true demo_head=%s compiler_head=%s scope=Java_native_checks_and_two_guests\n' \
+    "$ORESLANG_DEMO_SHA" "$ORESLANG_COMPILER_SHA"
+fi
