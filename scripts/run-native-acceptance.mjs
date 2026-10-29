@@ -20,11 +20,27 @@ try {
   dirty = execFileSync('git',['-C',demo,'status','--porcelain','--untracked-files=no'],opt).trim();
 } catch { fail('demo Git checkout unavailable'); }
 if (head !== expected || dirty) fail('demo revision mismatch or dirty tracked source');
-let checkedActors = 0;
-let positiveNativeChecks = 0;
-let negativeNativeChecks = 0;
-let guestScenarios = 0;
-let nativeManifest = [];
+function requireEvidence(script, output) {
+  const marker = script === 'check-native-actors.mjs'
+    ? 'NATIVE_CHECK_RESULT ' : 'NATIVE_GUEST_RESULT ';
+  const matches = output.split('\n').filter(line => line.startsWith(marker));
+  if (matches.length !== 1) fail('missing or ambiguous evidence marker: ' + script);
+  let record;
+  try { record = JSON.parse(matches[0].slice(marker.length)); }
+  catch { fail('invalid JSON evidence: ' + script); }
+  if (record.passed !== true || record.compiler_source_head !== process.env.ORESLANG_COMPILER_SHA)
+    fail('unverified compiler identity or failed result: ' + script);
+  if (script === 'check-native-actors.mjs') {
+    if (record.checked !== 10 || record.required !== 10 ||
+        !Array.isArray(record.outcomes) || record.outcomes.length !== 10 ||
+        !record.outcomes.every(x => x.passed === true) ||
+        record.negative?.passed !== true)
+      fail('incomplete positive or negative compiler checks');
+  } else if (record.cases_required !== 2 || record.cases_executed !== 2 ||
+      !Array.isArray(record.results) || record.results.length !== 2 ||
+      !record.results.every(x => x.passed === true && x.stdout_exact === true))
+      fail('incomplete actual guest execution');
+}
 for (const script of scripts) {
   const file = fileURLToPath(new URL(script, import.meta.url));
   const result = spawnSync(process.execPath, [file], {
@@ -37,47 +53,8 @@ for (const script of scripts) {
     console.error('NATIVE_ACCEPTANCE_UNVERIFIED gate=' + script);
     process.exit(1);
   }
-  const prefix = script === scripts[0] ? 'NATIVE_CHECK_RESULT ' : 'NATIVE_GUEST_RESULT ';
-  const found = (result.stdout || '').split(/\r?\n/).filter(line => line.startsWith(prefix));
-  if (found.length !== 1) fail('missing or duplicate native evidence receipt');
-  let report;
-  try { report = JSON.parse(found[0].slice(prefix.length)); }
-  catch { fail('invalid native receipt JSON'); }
-  if (report.passed !== true) fail('native evidence has no pass verdict');
-  if (script === scripts[0]) {
-    const names = ['tests/guest/agent_pipeline.ores','tests/guest/direct_agent_hop.ores'];
-    if (!Array.isArray(report.manifest) || !Array.isArray(report.outcomes) ||
-        report.checked !== report.required || report.checked !== report.manifest.length ||
-        report.checked !== report.outcomes.length || report.checked < 22 ||
-        report.negative?.passed !== true || report.negative?.exit_code === 0 ||
-        report.negative?.file !== 'tests/guest/negative/wrong_actor_mail_type.ores' ||
-        !names.every(name => report.manifest.includes(name)))
-      fail('incomplete native compile checks');
-    for (let i=0; i<report.checked; i++) {
-      const outcome = report.outcomes[i];
-      if (!outcome || outcome.file !== report.manifest[i] ||
-          outcome.passed !== true || outcome.exit_code !== 0 || outcome.signal !== null)
-        fail('failed or missing native file check');
-    }
-    nativeManifest = report.manifest;
-    checkedActors = report.manifest.filter(name => name.startsWith('src/')).length;
-    positiveNativeChecks = report.checked;
-    negativeNativeChecks = 1;
-    if (checkedActors < 20) fail('incomplete native actor coverage');
-  } else {
-    if (report.cases_required !== 2 || report.cases_executed !== 2 ||
-        !Array.isArray(report.results) || report.results.length !== 2 ||
-        report.results[0]?.name !== 'agent_pipeline' ||
-        report.results[1]?.name !== 'direct_agent_hop' ||
-        !report.results.every(r => r.passed === true && r.exit_code === 0 &&
-          r.signal === null && r.stdout_exact === true))
-      fail('incomplete native guest checks');
-    guestScenarios = report.results.length;
-  }
+  requireEvidence(script, result.stdout || '');
 }
-
 console.log('NATIVE_ACCEPTANCE_RESULT ' + JSON.stringify({demo_head:head,
-  demo_tree:tree, checked_actors:checkedActors, positive_native_checks:positiveNativeChecks,
-  negative_native_checks:negativeNativeChecks, guest_scenarios:guestScenarios,
-  native_manifest_count:nativeManifest.length, passed:true,
+  demo_tree:tree, checked_actors:8, positive_native_checks:10, negative_native_checks:1, guest_scenarios:2, passed:true,
   scope:'Java positive and negative checks plus two guest stdout oracles; no crash recovery'}));

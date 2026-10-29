@@ -62,14 +62,16 @@ define isolated actor MemoryVerificationActor as
     });
   }
 
-  // Allow replacement only by another verified record with the same
-  // repository/branch/subject. Never overwrite the older evidence.
+  // Supersession moves forward in monotonically allocated ticket order.
+  // The replacement must already be independently verified and match the
+  // repository/branch/subject. Git revision freshness needs external proof.
+  // Never overwrite or revive the earlier evidence.
   pub supersede(int old_ticket, int replacement_ticket): bool with state.read, state.write {
     return self.handle_state(critical |s| -> {
       if old_ticket <= 0 || replacement_ticket <= 0 ||
          old_ticket > s.memory_ids.size ||
          replacement_ticket > s.memory_ids.size ||
-         old_ticket == replacement_ticket; then return false; fi
+         replacement_ticket <= old_ticket; then return false; fi
       val int a = old_ticket - 1;
       val int b = replacement_ticket - 1;
       if s.states[a] != 1 || s.states[b] != 1 ||
