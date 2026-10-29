@@ -4,6 +4,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { receiptFromOutput, verifyNativeCheck, verifyNativeGuest } from './native-evidence.mjs';
 const scripts = ['check-native-actors.mjs', 'run-native-guest.mjs'];
 const demo = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
 const expected = process.env.ORESLANG_DEMO_SHA ?? '';
@@ -22,6 +23,8 @@ try {
 if (head !== expected || dirty) fail('demo revision mismatch or dirty tracked source');
 let checkedActors = 0;
 let checkedGuestSources = 0;
+let manifestSha = '';
+let verifiedGuest = null;
 for (const script of scripts) {
   const file = fileURLToPath(new URL(script, import.meta.url));
   const result = spawnSync(process.execPath, [file], {
@@ -34,27 +37,30 @@ for (const script of scripts) {
     console.error('NATIVE_ACCEPTANCE_UNVERIFIED gate=' + script);
     process.exit(1);
   }
-  if (script === 'check-native-actors.mjs') {
-    const lines = (result.stdout || '').split(/\r?\n/);
-    const reports = lines.filter(x => x.startsWith('NATIVE_CHECK_RESULT '));
-    if (reports.length !== 1) fail('missing or ambiguous compiler-check receipt');
-    let report;
-    try { report = JSON.parse(reports[0].slice('NATIVE_CHECK_RESULT '.length)); }
-    catch { fail('invalid compiler-check receipt'); }
-    if (report.passed !== true || !Number.isInteger(report.checked) ||
-        report.checked < 21 || report.checked !== report.required ||
-        !Array.isArray(report.manifest) ||
-        report.manifest.length !== report.checked ||
-        report.manifest.some(x => typeof x !== 'string') ||
-        new Set(report.manifest).size !== report.manifest.length)
-      fail('compiler-check receipt failed closed verification');
-    checkedGuestSources = report.manifest.filter(x => x.startsWith('tests/guest/')).length;
-    checkedActors = report.checked - checkedGuestSources;
-    if (checkedActors < 20 || checkedGuestSources < 1)
-      fail('insufficient native actor or guest source coverage');
+  try {
+    if (script === 'check-native-actors.mjs') {
+      const report = receiptFromOutput(result.stdout, 'NATIVE_CHECK_RESULT');
+      const valid = verifyNativeCheck(report, demo, process.env.ORESLANG_COMPILER_SHA);
+      checkedActors = valid.checked_actors;
+      checkedGuestSources = valid.checked_guest_sources;
+      manifestSha = valid.manifest_sha256;
+    } else if (script === 'run-native-guest.mjs') {
+      const report = receiptFromOutput(result.stdout, 'NATIVE_GUEST_RESULT');
+      verifiedGuest = verifyNativeGuest(report, demo, process.env.ORESLANG_COMPILER_SHA);
+    } else {
+      fail('unexpected native gate');
+    }
+  } catch (error) {
+    fail('invalid ' + script + ' evidence: ' + String(error.message));
   }
 }
+if (!verifiedGuest || checkedActors < 20 || checkedGuestSources < 1)
+  fail('native acceptance incomplete');
+
 console.log('NATIVE_ACCEPTANCE_RESULT ' + JSON.stringify({demo_head:head,
   demo_tree:tree, checked_actors:checkedActors, checked_guest_sources:checkedGuestSources,
-  guest_scenarios:1, passed:true,
+  manifest_sha256:manifestSha, guest_scenarios:verifiedGuest.guest_scenarios,
+  guest_fixture_sha256:verifiedGuest.guest_fixture_sha256,
+  guest_oracle_sha256:verifiedGuest.guest_oracle_sha256,
+  passed:true,
   scope:'Java checks and one guest stdout; no crash recovery'}));

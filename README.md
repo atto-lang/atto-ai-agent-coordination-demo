@@ -119,6 +119,16 @@ tool-execution or inference endpoint.
 
 With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and three runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
 
+## Native evidence hardening
+
+The combined native acceptance runner now verifies individual per-file
+compiler outcomes, source SHA-256 hashes, and the exact guest execution
+receipt. The positive/negative evidence test is
+`node --test tests/native-evidence.test.mjs`. This tests **receipt
+consistency**, not native Oreslang execution. The transfer/runner safety
+policy and open evidence gaps are in
+[Native CI evidence audit](docs/CI_NATIVE_EVIDENCE_AUDIT.md).
+
 ## Validation
 
 ```sh
