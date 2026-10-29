@@ -2,10 +2,18 @@
 
 ## What this verifies
 
-The first executable guest fixture `tests/guest/agent_pipeline.ores` spawns:
+The first guest fixture `tests/guest/agent_pipeline.ores` spawns:
 - one long-lived `KnowledgeCacheActor` (two ordered lookups produce `1|2`),
 - `ResearchAgent`, `AnalysisAgent`, `ExecutionAgent` (typed `ActorMail<String>`),
 - a **main-mediated** research → analysis → execution message chain.
+
+A second compiler-targeted fixture, `tests/guest/direct_agent_hop.ores`,
+sends an `ActorRef<DirectAnalysisAgent>` to the research worker. Research then
+sends `"evidence-ready"` directly to Analysis through the typed reference;
+main still relays Analysis's output to the Execution worker. This is **one
+worker-to-worker hop**, not an actor-pipeline operator, direct 3-stage routing,
+durable delivery or remote dispatch. The new exact oracle is
+`evidence-ready|approved|executed` and is still unexecuted by Java.
 
 The final result is an **inert string receipt**: no LLM inference, file edit, network I/O, GitHub mutation or other tool side effect occurs. Main is the router; the demo does **not** demonstrate direct actor-to-actor routing, distributed coordination, authenticated policy admission, persistence or crash recovery. These remain separate milestones.
 
@@ -37,7 +45,10 @@ The runner requires: (1) exact 40-hex compiler source HEAD, (2) clean tracked co
 The Java reference launcher currently implements `--check` via
 `LinkedProgramRunner.validate`. The new fail-closed gate
 `scripts/check-native-actors.mjs` invokes it against **all eight** `src/*.ores`
-actors and `tests/guest/agent_pipeline.ores`. The combined gate
+actors and **both** guest fixtures (10 positive inputs). It additionally
+runs `tests/guest/negative/wrong_actor_mail_type.ores` and requires a targeted
+`ActorRef.send mailbox value` type diagnostic; a nonzero parser failure alone
+does not count as success. The combined gate
 `scripts/run-native-acceptance.mjs` first requires an exact, clean **demo**
 Git HEAD and tree, then runs compiler checks, then runs the guest stdout oracle.
 It does not skip a failed actor and does not claim a native pass without
@@ -58,8 +69,8 @@ node --test tests/*.test.mjs
 node scripts/run-native-acceptance.mjs
 ```
 
-The combined gate returns `NATIVE_CHECK_RESULT` (nine compiler checks),
-`NATIVE_GUEST_RESULT` (one executed program and byte-exact stdout), and
+The combined gate returns `NATIVE_CHECK_RESULT` (ten positive and one negative compiler check),
+`NATIVE_GUEST_RESULT` (two executed programs and byte-exact stdout), and
 `NATIVE_ACCEPTANCE_RESULT` (demo source HEAD/tree) **only after all checks
 succeed**. These are distinct from host-only Node.js reference-model tests.
 
@@ -76,8 +87,8 @@ the observed actor-mail stdout.
 | Gate | Required evidence | Status |
 | --- | --- | --- |
 | JS specification/model | Exact test file blobs + executed TAP | Locally executed (reference tests, not Oreslang) |
-| Native demo guest | Java OresMain 0 exit, exact oracle `1|2|evidence-ready|approved|executed`, verified compiler build SHA | Pending |
-| Eight preexisting `src/*.ores` actors | Java OresMain `--check` each actor file, with diagnostics, then exercised behavioral cases | Harness committed; native checks pending |
+| Native demo guest | Two Java OresMain executions: `1|2|evidence-ready|approved|executed` and `evidence-ready|approved|executed`, verified compiler build SHA | Pending |
+| Eight preexisting `src/*.ores` actors | Java OresMain `--check` each actor file, both guest fixtures, plus rejection of ill-typed mailbox send | Harness committed; native checks pending |
 | Actor cross-message causality | Child send/receive with real worker-to-worker routing, timeout/cancel checks | Pending (main router only) |
 | Authenticated authorization | Capability checks, authenticated tool receipts, fail-closed unauthenticated instructions | Pending |
 | Durable recovery reference | Node.js fsync journal replay, SIGKILL and ambiguous receipt reconciliation | Executed locally; native/distributed recovery pending |
