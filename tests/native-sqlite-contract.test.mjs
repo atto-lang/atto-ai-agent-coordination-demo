@@ -34,7 +34,7 @@ test('storage uses SQLite WAL+FULL, bounded CAS and one-shot dispatch claim',()=
   assert.match(source,/state='prepared'/);
   assert.match(source,/state='in_doubt'/);
   assert.match(source,/state='committed'/);
-  assert.match(source,/state='finished'/);
+  assert.match(source,/phase='finished'/);
 });
 
 test('receipt checking is performed outside SQLite writer lock then CAS checked again',()=>{
