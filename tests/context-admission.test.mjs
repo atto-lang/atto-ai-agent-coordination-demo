@@ -124,3 +124,33 @@ test('rejects ninth queued verification and fails closed on verifier error', asy
   assert.equal(await admission.add(item()), false);
   assert.equal(admission.seal(), true);
 });
+
+test('rejects accessor descriptors and hostile Proxy traps without throwing', async () => {
+  const admission = make();
+  const accessor = { memory_id: 'mem-accessor', evidence_ref: 'ref',
+    get excerpt() { throw Error('must never execute getter'); } };
+  assert.equal(await admission.add(accessor), false);
+  const proxy = new Proxy(item('mem-proxy'), {
+    ownKeys() { throw Error('untrusted shape'); }
+  });
+  assert.equal(await admission.add(proxy), false);
+  assert.equal(admission.seal(), true);
+});
+
+test('rejects verifier accessor proof and extra attacker-controlled fields', async () => {
+  const badVerifier = [
+    req => ({ ...req, authorized: true, claimed_owner: 'admin' }),
+    req => Object.defineProperty({ ...req }, 'authorized', {
+      enumerable: true, get() { throw Error('untrusted getter'); }
+    }),
+    req => new Proxy({ ...req, authorized: true }, {
+      getOwnPropertyDescriptor() { throw Error('not a data proof'); }
+    })
+  ];
+  for (const makeProof of badVerifier) {
+    const admission = make({ verifyEvidence: async req => makeProof(req) });
+    assert.equal(await admission.add(item()), false);
+    assert.equal(admission.seal(), true);
+    assert.equal(JSON.parse(admission.selected_context().context_json).records.length, 0);
+  }
+});

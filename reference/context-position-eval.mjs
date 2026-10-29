@@ -12,6 +12,7 @@ export async function evaluate_context_positions({ cases, runModel }) {
     if (!fixture || !idOk(fixture.id) || typeof fixture.question !== 'string' ||
         fixture.question.length < 1 || fixture.question.length > 1024 ||
         typeof fixture.expected_answer !== 'string' ||
+        fixture.expected_answer.length > 4096 ||
         !idOk(fixture.expected_memory_id) || !Array.isArray(fixture.excerpts) ||
         fixture.excerpts.length < 3 || fixture.excerpts.length > 24 ||
         fixture.excerpts.some(e => !e || !idOk(e.memory_id) ||
@@ -34,12 +35,50 @@ export async function evaluate_context_positions({ cases, runModel }) {
       try { output = await runModel(Object.freeze({
         case_id: fixture.id, position, question: fixture.question, context_json
       })); } catch { output = null; }
-      const hasAnswer = output && output.answer === fixture.expected_answer;
-      const hasCitation = Array.isArray(output?.cited_memory_ids) &&
-        output.cited_memory_ids.includes(fixture.expected_memory_id);
-      const noTools = Array.isArray(output?.tool_calls) && output.tool_calls.length === 0;
+      let correct = false;
+      try {
+        // Reject exotic response envelopes, accessor properties, forged
+        // citations and duplicate citation IDs; never trust model grading.
+        if (output && Object.getPrototypeOf(output) === Object.prototype &&
+            !Array.isArray(output) &&
+            Reflect.ownKeys(output).length === 3 &&
+            ['answer', 'cited_memory_ids', 'tool_calls'].every(key =>
+              Object.hasOwn(Object.getOwnPropertyDescriptor(output, key) ?? {}, 'value'))) {
+          const answer = Object.getOwnPropertyDescriptor(output, 'answer').value;
+          const citations = Object.getOwnPropertyDescriptor(output, 'cited_memory_ids').value;
+          const toolCalls = Object.getOwnPropertyDescriptor(output, 'tool_calls').value;
+          const allowed = new Set(selected.map(e => e.memory_id));
+          // Never execute array element getters or let non-index properties
+          // hide a tool request in an apparently empty tool_calls array.
+          const cleanIds = value => {
+            if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+                value.length < 1 || value.length > selected.length ||
+                Reflect.ownKeys(value).length !== value.length + 1) return null;
+            const ids = [];
+            for (let i = 0; i < value.length; i++) {
+              const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+              if (!descriptor || !Object.hasOwn(descriptor, 'value') ||
+                  typeof descriptor.value !== 'string' ||
+                  !allowed.has(descriptor.value)) return null;
+              ids.push(descriptor.value);
+            }
+            return ids;
+          };
+          const ids = cleanIds(citations);
+          const noTools = Array.isArray(toolCalls) &&
+            Object.getPrototypeOf(toolCalls) === Array.prototype &&
+            toolCalls.length === 0 &&
+            Reflect.ownKeys(toolCalls).length === 1 &&
+            Reflect.ownKeys(toolCalls)[0] === 'length';
+          const grounded = ids !== null &&
+            new Set(ids).size === ids.length &&
+            ids.includes(fixture.expected_memory_id);
+          correct = typeof answer === 'string' &&
+            answer === fixture.expected_answer && grounded && noTools;
+        }
+      } catch { correct = false; }
       observations.push(Object.freeze({ case_id: fixture.id, position,
-        correct: Boolean(hasAnswer && hasCitation && noTools) }));
+        correct }));
     }
   }
   const perPosition = Object.fromEntries(positions.map(position => {
