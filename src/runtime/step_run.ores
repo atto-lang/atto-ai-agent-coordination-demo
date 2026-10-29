@@ -21,6 +21,7 @@ define isolated actor StepRunActor as
     used_keys: Array<String> = new Array<String>();
     active_key: String = "";
     result_receipt: String = "";
+    receipt_history: Array<String> = new Array<String>();
   }
 
   // Identities and source SHA must be authenticated by the caller; the
@@ -101,9 +102,13 @@ define isolated actor StepRunActor as
          step != s.step_id || exact_revision != s.source_revision ||
          expected_epoch != s.activation_epoch ||
          expected_version != s.version ||
-         (s.phase != 2 && s.phase != 7) ||
+         s.phase != 7 ||
          idempotency_key != s.active_key || evidence_receipt == "" ||
          s.version >= 2147483646; then return false; fi
+      for (const prior_receipt of s.receipt_history) {
+        if prior_receipt == evidence_receipt; then return false; fi
+      }
+      s.receipt_history.add(evidence_receipt);
       if s.attempts < s.max_attempts; then
         s.phase = 3;
       else
@@ -130,6 +135,10 @@ define isolated actor StepRunActor as
          (s.phase != 2 && s.phase != 7) ||
          idempotency_key != s.active_key || committed_receipt == "" ||
          s.version >= 2147483646; then return false; fi
+      for (const prior_receipt of s.receipt_history) {
+        if prior_receipt == committed_receipt; then return false; fi
+      }
+      s.receipt_history.add(committed_receipt);
       s.phase = 4;
       s.result_receipt = committed_receipt;
       s.version = s.version + 1;
