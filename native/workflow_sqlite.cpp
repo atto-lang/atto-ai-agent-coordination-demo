@@ -100,6 +100,8 @@ int ensure_private(const char *dir,std::string &path) {
   // Existing file must not be a symlink or hardlink to another target.
   int fd=open(path.c_str(),O_CREAT|O_EXCL|O_RDWR|O_CLOEXEC|O_NOFOLLOW,0600);
   if(fd<0){
+    if(errno!=EEXIST)return WF_STORAGE_ERROR;
+    if(lstat(path.c_str(),&st)!=0 || !S_ISREG(st.st_mode) || st.st_nlink!=1 ||
        (st.st_mode & 077)!=0 || st.st_uid!=geteuid())return WF_INVALID;
   } else close(fd);
   return WF_OK;
@@ -199,6 +201,8 @@ int wf_accept_step(wf_store *s,const char *t,const char *r,const char *rev,
 int wf_claim_dispatch(wf_store *s,const char *t,const char *r,const char *rev,
  int64_t epoch,int64_t version,const char *step,const char *key,const char *digest,
  int64_t *new_version) {
+  if(!run_id(t,r,rev)||!safe(step)||!safe(key)||!hex(digest,64)||
+    epoch<1||version<1||!new_version)return WF_INVALID;
   int a=auth(s,"claim_dispatch",t,r,rev,epoch,version,step,key,digest);if(a)return a;
   std::lock_guard<std::mutex> lock(s->mutex);
   Tx tx(s);if(!tx.active)return WF_STORAGE_ERROR;
