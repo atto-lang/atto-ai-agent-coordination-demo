@@ -2,7 +2,7 @@
 // Single-process/single-writer reference. A production runtime needs a fenced
 // exclusive writer, authenticated policy, and a transactional storage adapter.
 import { createHash } from 'node:crypto';
-import { openSync, closeSync, readFileSync, writeSync, fsyncSync, mkdirSync, unlinkSync, lstatSync, statSync, fstatSync, constants } from 'node:fs';
+import { openSync, closeSync, readFileSync, writeSync, fsyncSync, mkdirSync, unlinkSync, lstatSync, fstatSync, constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const hash = (x) => createHash('sha256').update(x).digest('hex');
@@ -115,11 +115,17 @@ export class DurableWorkflow {
         const info = fstatSync(fd);
         assert(info.isFile() && info.nlink === 1 && (info.mode & 0o077) === 0,
           'unsafe journal file permissions');
+        assert(info.size + bytes.length <= 16 * 1024 * 1024,
+          'journal size budget exhausted');
         let offset = 0;
         while (offset < bytes.length)
           offset += writeSync(fd, bytes, offset, bytes.length - offset);
         fsyncSync(fd);
       } finally { closeSync(fd); }
+      // Persist the new journal directory entry as well as file contents on
+      // POSIX local filesystems. This remains a reference, not a DB commit.
+      const dirFd = openSync(this.directory, constants.O_RDONLY);
+      try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
       after.seq = seq; after.last_hash = record.hash;
       this.#state = after;
       return structuredClone(this.#state);
