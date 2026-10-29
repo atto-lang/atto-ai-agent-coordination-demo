@@ -2,102 +2,118 @@
 // A name is stable across relocations; its physical placement is not.
 // This actor is NOT a transport, authorization service, or durable registry.
 define isolated actor ActorRouteDirectoryActor as
-  let Array<String> actor_ids = new Array<String>();
-  let Array<int> incarnations = new Array<int>();
-  let Array<int> generations = new Array<int>();
-  let Array<int> route_epochs = new Array<int>();
-  let Array<String> placements = new Array<String>();
-  let Array<bool> active = new Array<bool>();
+  state {
+    actor_ids: Array<String> = new Array<String>();
+    incarnations: Array<int> = new Array<int>();
+    generations: Array<int> = new Array<int>();
+    route_epochs: Array<int> = new Array<int>();
+    placements: Array<String> = new Array<String>();
+    active: Array<bool> = new Array<bool>();
+  }
 
   pub register(String actor_id, int incarnation,
-                   int generation, String placement): bool {
-    if actor_id == "" || placement == "" ||
-       incarnation < 1 || generation < 1 ||
-       self.actor_ids.size >= 512; then return false; fi
-    for (const existing of self.actor_ids) {
-      if existing == actor_id; then return false; fi
-    }
-    self.actor_ids.add(actor_id);
-    self.incarnations.add(incarnation);
-    self.generations.add(generation);
-    self.route_epochs.add(1);
-    self.placements.add(placement);
-    self.active.add(true);
-    return true;
+                   int generation, String placement): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if actor_id == "" || placement == "" ||
+         incarnation < 1 || generation < 1 ||
+         s.actor_ids.size >= 512; then return false; fi
+      for (const existing of s.actor_ids) {
+        if existing == actor_id; then return false; fi
+      }
+      s.actor_ids.add(actor_id);
+      s.incarnations.add(incarnation);
+      s.generations.add(generation);
+      s.route_epochs.add(1);
+      s.placements.add(placement);
+      s.active.add(true);
+      return true;
+    });
   }
 
   // Revokes the previous incarnation/route epoch. Actual delivery must
   // revalidate this token to reject in-flight stale traffic.
   pub relocate(String actor_id, int expected_incarnation,
                    int expected_epoch, int next_incarnation,
-                   int next_generation, String next_placement): bool {
-    if actor_id == "" || next_placement == "" ||
-       next_incarnation <= expected_incarnation ||
-       next_incarnation >= 2147483646 ||
-       next_generation < 1; then return false; fi
-    let int i = 0;
-    for (const existing of self.actor_ids) {
-      if existing == actor_id; then
-        if !self.active[i] ||
-           self.incarnations[i] != expected_incarnation ||
-           self.route_epochs[i] != expected_epoch ||
-           self.route_epochs[i] >= 2147483646; then
-          return false;
+                   int next_generation, String next_placement): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if actor_id == "" || next_placement == "" ||
+         next_incarnation <= expected_incarnation ||
+         next_incarnation >= 2147483646 ||
+         next_generation < 1; then return false; fi
+      let int i = 0;
+      for (const existing of s.actor_ids) {
+        if existing == actor_id; then
+          if !s.active[i] ||
+             s.incarnations[i] != expected_incarnation ||
+             s.route_epochs[i] != expected_epoch ||
+             s.route_epochs[i] >= 2147483646; then
+            return false;
+          fi
+          s.incarnations[i] = next_incarnation;
+          s.generations[i] = next_generation;
+          s.placements[i] = next_placement;
+          s.route_epochs[i] = s.route_epochs[i] + 1;
+          return true;
         fi
-        self.incarnations[i] = next_incarnation;
-        self.generations[i] = next_generation;
-        self.placements[i] = next_placement;
-        self.route_epochs[i] = self.route_epochs[i] + 1;
-        return true;
-      fi
-      i = i + 1;
-    }
-    return false;
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
   // A caller may resolve only the exact identity token it was issued.
   pub resolve(String actor_id, int incarnation,
-                  int generation, int epoch): Result<String, String> {
-    let int i = 0;
-    for (const existing of self.actor_ids) {
-      if existing == actor_id; then
-        if !self.active[i] || self.incarnations[i] != incarnation ||
-           self.generations[i] != generation ||
-           self.route_epochs[i] != epoch; then
-          return Err("stale actor reference");
+                  int generation, int epoch): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
+      let int i = 0;
+      for (const existing of s.actor_ids) {
+        if existing == actor_id; then
+          if !s.active[i] || s.incarnations[i] != incarnation ||
+             s.generations[i] != generation ||
+             s.route_epochs[i] != epoch; then
+            return Err("stale actor reference");
+          fi
+          return Ok(s.placements[i]);
         fi
-        return Ok(self.placements[i]);
-      fi
-      i = i + 1;
-    }
-    return Err("unknown actor");
+        i = i + 1;
+      }
+      return Err("unknown actor");
+    });
   }
 
   pub retire(String actor_id, int incarnation,
-                 int epoch): bool {
-    let int i = 0;
-    for (const existing of self.actor_ids) {
-      if existing == actor_id; then
-        if !self.active[i] || self.incarnations[i] != incarnation ||
-           self.route_epochs[i] != epoch; then return false; fi
-        self.active[i] = false;
-        return true;
-      fi
-      i = i + 1;
-    }
-    return false;
+                 int epoch): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      let int i = 0;
+      for (const existing of s.actor_ids) {
+        if existing == actor_id; then
+          if !s.active[i] || s.incarnations[i] != incarnation ||
+             s.route_epochs[i] != epoch; then return false; fi
+          s.active[i] = false;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
-  pub route_epoch(String actor_id): Result<int, String> {
-    let int i = 0;
-    for (const existing of self.actor_ids) {
-      if existing == actor_id; then
-        if !self.active[i]; then return Err("actor retired"); fi
-        return Ok(self.route_epochs[i]);
-      fi
-      i = i + 1;
-    }
-    return Err("unknown actor");
+  pub route_epoch(String actor_id): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      let int i = 0;
+      for (const existing of s.actor_ids) {
+        if existing == actor_id; then
+          if !s.active[i]; then return Err("actor retired"); fi
+          return Ok(s.route_epochs[i]);
+        fi
+        i = i + 1;
+      }
+      return Err("unknown actor");
+    });
   }
-  pub size(): int { return self.actor_ids.size; }
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.actor_ids.size;
+    });
+  }
 end
