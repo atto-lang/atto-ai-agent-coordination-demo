@@ -35,3 +35,7 @@ Node-only structural gate in an approved local checkout:
     node --test tests/retrieval-scorecard-source.test.mjs
 
 This test does not parse or execute Oreslang. Release gate: exact-head native Java/Graal compiler/guest semantics, LLVM and remaining-backend parity, real model executor, per-test verified provenance, no zero-step Actions run, prompt injection at actual tool-dispatch boundary, independently authenticated grading and signed receipts. No private source exported to another org without explicit approval. **DRAFT ONLY.**
+
+| E16 | Query total/grounded/unsafe/generation with foreign tenant/run/model/corpus revision | Return `Err`; never disclose another scoped experiment's counters. Separate authenticator must still validate caller capability |
+
+**2026-10-29 audit:** all four read-only scorecard APIs now require tenant, run, model and exact corpus revision and return `Result<int,String>`. This does **not** authenticate a client or prove an evaluator receipt. See PR #12 `docs/AI_ML_SECURITY_AUDIT_20261029.md` for shared release blockers.
