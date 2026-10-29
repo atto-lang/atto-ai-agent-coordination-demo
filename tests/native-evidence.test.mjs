@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { receiptFromOutput, verifyNativeCheck, verifyNativeGuest } from '../scripts/native-evidence.mjs';
@@ -102,4 +102,23 @@ test('rejects guest reports without actual exact execution',()=>{
       assert.throws(()=>verifyNativeGuest(bad,s.dir,SHA));
     }
   } finally{s.cleanup()}
+});
+
+
+test('rejects unlisted nested actor source instead of silently omitting it', () => {
+  const s = sample();
+  try {
+    mkdirSync(join(s.dir, 'src/extra'), {recursive:true});
+    writeFileSync(join(s.dir, 'src/extra/unsafe.ores'), 'define isolated actor Unsafe as end\n');
+    assert.throws(() => verifyNativeCheck(s.check, s.dir, SHA),
+      /unlisted native actor source/);
+  } finally { s.cleanup(); }
+});
+test('rejects symlinked actor source even when pointing inside checkout', () => {
+  const s = sample();
+  try {
+    symlinkSync(join(s.dir, 'src/fixture0.ores'), join(s.dir, 'src/linked.ores'));
+    assert.throws(() => verifyNativeCheck(s.check, s.dir, SHA),
+      /(?:symlink in actor source tree|nonregular)/);
+  } finally { s.cleanup(); }
 });

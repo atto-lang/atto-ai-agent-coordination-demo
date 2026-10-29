@@ -21,6 +21,24 @@ export function receiptFromOutput(stdout, prefix) {
   return receipt;
 }
 
+
+// A future subdirectory must not become an unaudited bypass around the exact
+// manifest. Reject symlinks even if they happen to resolve within the tree.
+function assertCompleteActorCoverage(demo, manifest) {
+  const allowed = new Set(manifest);
+  const stack = ['src'];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const entry of readdirSync(join(demo, dir), { withFileTypes: true })) {
+      const path = dir + '/' + entry.name;
+      if (entry.isSymbolicLink()) throw Error('symlink in actor source tree: ' + path);
+      if (entry.isDirectory()) { stack.push(path); continue; }
+      if (entry.name.endsWith('.ores') && (!entry.isFile() || !allowed.has(path)))
+        throw Error('unlisted native actor source: ' + path);
+    }
+  }
+}
+
 function manifestFromTree(demo) {
   const paths = [];
   for (const [dir, minCount] of dirs) {
@@ -35,6 +53,7 @@ function manifestFromTree(demo) {
       paths.push(dir + '/' + x.name);
     }
   }
+  assertCompleteActorCoverage(demo, paths);
   return paths.sort();
 }
 
