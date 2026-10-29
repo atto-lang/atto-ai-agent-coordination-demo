@@ -157,6 +157,17 @@ actor-owned arenas. The locked section is synchronous: it contains no
 actor-state loan across a suspension or a remote effect. Native compiler
 positive and negative tests are mandatory before merging.
 
+## State-loan native compatibility gate
+
+The earlier ownership checks confirm that fields are enclosed in one state
+schema and methods use critical state loans. They **do not establish type
+correctness**. The 20 prototype actors currently contain **99
+value-returning `handle_state` calls**, while the implemented compiler
+baseline accepts only void callbacks. See
+[the blocking compatibility audit](docs/ACTOR_STATE_NATIVE_COMPATIBILITY.md).
+The new source-only compatibility test intentionally fails until an
+authorized compiler-backed correction is made.
+
 ## Validation
 
 ```sh
