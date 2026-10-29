@@ -156,6 +156,24 @@ checks do not establish that execution.
 
 See [Step Functions integration audit and acceptance gates](docs/STEP_FUNCTION_ALIGNMENT_20261029.md).
 
+## Native SQLite host storage driver (draft, Oreslang linking pending)
+
+A C++17 native SQLite adapter now implements real WAL-backed
+`create_run`, epoch fencing, atomic inbox/outbox admission, one-shot
+`prepared -> in_doubt` claims, externally verified reconciliation and
+terminal completion. It is accompanied by a stable C ABI, an **unimplemented**
+Oreslang `WorkflowDurableStorage` contract and an independent Linux native
+build/test gate.
+
+**Seven real host-native SQLite tests passed**, including `SIGKILL` before
+dispatch and after a simulated remote commit, two competing OS processes,
+same-handle thread fencing, and validation under ASan/UBSan. No Node.js
+workflow engine is used in this native driver. It still does **not** link
+to the Oreslang compiler/runtime, persist live Oreslang actor snapshots,
+authenticate real external tool receipts or constitute a distributed lease.
+
+See [Native workflow storage adapter and test evidence](docs/NATIVE_WORKFLOW_STORAGE_ADAPTER.md).
+
 ## Transactional inbox/outbox and native protocol (draft)
 
 The new `WorkflowInboxOutboxActor` is **pure Oreslang source**, with
