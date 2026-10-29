@@ -70,7 +70,8 @@ export function create_trusted_manifest_dispatch({
     if (!clean || clean.task_id !== task_id || clean.exact_revision !== exact_revision) return false;
     const memory_ids = primitiveArray(clean.memory_ids, scopedId, 24);
     const evidence_refs = primitiveArray(clean.evidence_refs, evidenceRef, 24);
-    if (!memory_ids || !evidence_refs || memory_ids.length !== evidence_refs.length ||
+    if (!memory_ids || !evidence_refs || memory_ids.length === 0 ||
+        memory_ids.length !== evidence_refs.length ||
         new Set(memory_ids).size !== memory_ids.length) return false;
 
     const scope = Object.freeze({ tenant_id, task_id, exact_revision });
