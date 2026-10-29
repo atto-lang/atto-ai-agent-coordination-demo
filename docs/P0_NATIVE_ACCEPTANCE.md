@@ -41,12 +41,19 @@ The runner requires: (1) exact 40-hex compiler source HEAD, (2) clean tracked co
 | Eight preexisting `src/*.ores` actors | Parser, typechecker, ownership diagnostics and real execution for each actor | Pending |
 | Actor cross-message causality | Child send/receive with real worker-to-worker routing, timeout/cancel checks | Pending (main router only) |
 | Authenticated authorization | Capability checks, authenticated tool receipts, fail-closed unauthenticated instructions | Pending |
-| Durable recovery | Persisted checkpoint/outbox plus forced SIGKILL replay, no double side effect | Pending |
+| Durable recovery reference | Node.js fsync journal replay, SIGKILL and ambiguous receipt reconciliation | Executed locally; native/distributed recovery pending |
+| Production actor recovery | Fenced multi-host single writer, transactional outbox, external idempotent effect, exact native crash replay | Pending |
 | JVM native image / LLVM | Exact-source guest test, matching trace or explicit unsupported result | Pending |
 | .NET / WASM / Forge | Matching conformance fixtures on real engines | Pending |
 
 ## CI limitations
 
-The source organization's latest inspected `contracts` job had **zero executed steps** (run 40814875140). That is a runner admission failure, not a compiler or test result. The repository's source-only workflow runs `node --test tests/*.test.mjs` and cannot fetch another private repository using its default `GITHUB_TOKEN`. Do not make the source-only job claim native execution.
+The most recently inspected original `contracts` job had **zero executed steps** (run 40816132873); later runs must be checked separately. That is a runner admission failure, not a compiler or test result. The repository's source-only workflow runs `node --test tests/*.test.mjs` and cannot fetch another private repository using its default `GITHUB_TOKEN`. Do not make the source-only job claim native execution.
+
+The **reference** suite now also includes a JSON HTTP interoperability gateway and a
+hash-chained Node.js workflow journal with an actual subprocess SIGKILL test.
+These do not establish native Oreslang actor durability. `docs/DISTRIBUTED_INTELLIGENCE_GRAPH.md`
+defines the next implementation stages and the hard separation of untrusted AI
+proposals from authenticated execution policy.
 
 The prior proof-of-concepts repository `src/patterns/39-actor-model/runtime/` supplies known Java launcher actor-message syntax; this new fixture has **not** yet been compiled or executed by Java. Do not promote draft PR #1 to ready or merge on JS test evidence.
