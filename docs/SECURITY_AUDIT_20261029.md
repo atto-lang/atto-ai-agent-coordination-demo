@@ -1,9 +1,9 @@
 # AI-agent graph actor security and execution audit — 2026-10-29
 
-Scope: draft PRs [#1](../pull/1) (base), [#2](../pull/2) (memory),
-[#3](../pull/3) (routing/execution/effects), and relevant draft security
-PRs [#5](../pull/5) (native evidence), [#6](../pull/6)
-(state loan migration), [#8](../pull/8) (array-reference escape).
+Scope: draft PRs [#1](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/pull/1) (base), [#2](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/pull/2) (memory),
+[#3](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/pull/3) (routing/execution/effects), and relevant draft security
+PRs [#5](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/pull/5) (native evidence), [#6](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/pull/6)
+(state loan migration), [#8](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/pull/8) (array-reference escape).
 This is a **source and reference-model audit**. It does not attest native
 Oreslang parser, type checker, actor runtime, crash resilience or five-backend
 parity. Different branch heads can differ. Treat commit and file SHA as
@@ -33,8 +33,8 @@ mandatory evidence identifiers for any validation claim.
 
 ## Critical release blockers: not solved by source-only tests
 
-1. **Compiler integration:** current Java source `main` lacks executable sealed `state { ... }` / `self.handle_state` / effect-loan support used across the 20 actors. Reconcile Java draft #1804, #1806, #760, #2243 (fail-closed parser guard), and the agent repo's draft #6/#8; inspect callback result semantics and array escape. See [issue #7](../issues/7).
-2. **Execution admission:** exact-head GitHub-hosted `contracts` jobs repeatedly fail before the first step. Root cause (billing, runner allocation, org policies, approvals) remains **unconfirmed**. Owner-admin investigation or existing authorized local GraalVM JDK25 checkout required. See [issue #4](../issues/4).
+1. **Compiler integration:** current Java source `main` lacks executable sealed `state { ... }` / `self.handle_state` / effect-loan support used across the 20 actors. Reconcile Java draft #1804, #1806, #760, #2243 (fail-closed parser guard), and the agent repo's draft #6/#8; inspect callback result semantics and array escape. See [issue #7](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/issues/7).
+2. **Execution admission:** exact-head GitHub-hosted `contracts` jobs repeatedly fail before the first step. Root cause (billing, runner allocation, org policies, approvals) remains **unconfirmed**. Owner-admin investigation or existing authorized local GraalVM JDK25 checkout required. See [issue #4](https://github.com/ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo/issues/4).
 3. **Authority:** demo `DecisionGateActor`, `MemoryVerificationActor.resolve` and `WorkflowEffectLedgerActor.reconcile` accept caller-supplied booleans/receipts. These MUST be reachable only through an authenticated capability-verifying adapter; LLM messages, repository text, user-provided strings and HTTP callers must never grant execution rights. Current demonstration is **not a safe production control plane**.
 4. **Durability:** reference journal has no inter-host single-writer fencing, linearizable database CAS, authenticated receipt verification, durable directory service, or transactional outbox. The userland Oreslang actor ledger is still in-memory. An uncertain external side effect must not automatically replay.
 5. **Memory budget:** `ContextAssemblyActor` trusts a caller-supplied `estimated_tokens` instead of measuring byte/token length itself. Until native string length/tokenizer quotas are implemented and tested, this is **not a safe resource limit** against hostile excerpts.
