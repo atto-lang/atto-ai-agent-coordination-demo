@@ -16,20 +16,22 @@ A trusted integration may inject the returned verifier as the verifyEvidence cal
 
 Locally on Node.js 22.16.0 using real node:crypto Ed25519 key creation, signing and verification:
 
-    node --test tests/signed-evidence-verifier.test.mjs
+    node --test tests/signed-evidence-verifier.test.mjs tests/local-replay-claims.test.mjs
 
-**9/9 passed, 0 failed.** Negative tests cover wrong signing key; changed signature bytes; altered tenant/task/revision/evidence/memory/digest; expired and future receipt; wrong audience and issuer; malformed or forged key ID; accessor/Proxy property attacks; replay limit exhaustion; unavailable receipt source; and canonical encoding failures.
+**14/14 passed, 0 failed (9 signature tests and 5 local durable replay tests).** Negative tests cover wrong signing key; changed signature bytes; altered tenant/task/revision/evidence/memory/digest; expired and future receipt; wrong audience and issuer; malformed or forged key ID; accessor/Proxy property attacks; replay limit exhaustion; unavailable receipt source; and canonical encoding failures.
 
 Committed code and tested local code are exact Git blob matches:
 - reference/signed-evidence-verifier.mjs — 16e774c56db077a2203fbb449a1ab5c039e9f058
 - tests/signed-evidence-verifier.test.mjs — 44d026db5d62f287dec5330cd5e4dc48cae87d70
+- reference/local-replay-claims.mjs — 05faade2413ff8104a7c03fb88ae90de1b131e5a
+- tests/local-replay-claims.test.mjs — 8b8e2f0eaf912cd238de7393cbddae53bfe8fd26
 
 Tests are local, **NOT** exact-head hosted GitHub Actions and **NOT** native Oreslang guest tests.
 
 ## Unresolved P0 production gates
 
 1. **Native context bypass:** Existing src/memory/context_assembly.ores on PR #2 still has public add(...estimated_tokens) that trusts the caller. A host verifier does not make native actor admission fail closed. Require an unavoidable, independently verified ingress boundary plus native UTF-8 byte/tokenizer admission and compiler/guest tests. Do not assume String.size equals UTF-8 length.
-2. **Durable cross-host replay and fencing:** This reference only tracks a bounded Set of at most 4096 receipt IDs in one process. A process restart or multiple hosts can replay the same valid signature. Production needs a durable, linearizable receipt claim (issuer+receipt_id), activation epoch, cancellation and crash/restart tests; no durable storage is implemented here.
+2. **Distributed replay and fencing:** By default this reference tracks only a bounded in-process Set. The optional reference/local-replay-claims.mjs uses an operator-owned private local 0700 directory and O_CREAT|O_EXCL plus file/dir fsync; with claimReceipt and requireDurable:true, 5 real Node tests verify one-use across verifier instances on the same local filesystem. It is NOT a shared cross-host CAS or proof of power-loss durability on arbitrary filesystems. Network mounts, multi-host fencing, revocation, atomic external-effect transactions and full SIGKILL fault injection remain unresolved. The local directory must be on a trusted, private local filesystem whose ancestor paths cannot be swapped by an attacker.
 3. **Trusted key lifecycle:** Issuer/key rotation and revocation, secure signing issuance, identity mapping, transport authentication, network quotas, and independent approvals are not implemented. Key IDs are not self-authorizing.
 4. **Timeouts and resource limits:** Host code must enforce deadlines and cancellation around hung receipt/tokenizer callbacks, plus byte/body and CPU limits at real ingress.
 5. **Privileged tools:** A valid context receipt is not approval to execute, merge, deploy or release reserved capacity. Tool dispatch must independently verify capability, exact repo revision, executed CI evidence and side-effect authorization. Protect against prompt injection and tool-schema poisoning.
