@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
+#include <thread>
 
 #define CHECK(expr) do { if(!(expr)) {std::cerr << "FAILED " << #expr << " line " << __LINE__ << '\n';std::exit(1);} } while(0)
 static const char *rev="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -147,10 +148,37 @@ static void test_unsafe_path() {
  CHECK(s==nullptr);std::ifstream f(target);std::string data;f>>data;CHECK(data=="untouched");
  std::cout<<"native-sqlite symlink-refusal PASS\n";
 }
+static void test_killed_before_external_dispatch() {
+ Ctx c;c.dir=dir();pid_t child=fork();CHECK(child>=0);
+ if(child==0){
+   wf_store *s=open(c);int64_t e,v,n;
+   seed(s,e,v);accept(s,e,v,n);v=n;claim(s,e,v,n);
+   kill(getpid(),SIGKILL);_exit(99);
+ }
+ int status;CHECK(waitpid(child,&status,0)==child && WIFSIGNALED(status) && WTERMSIG(status)==SIGKILL);
+ wf_store *s=open(c);snapshot(s,1,3,0,1,0,0,1);
+ int64_t e=0,v=0,next;
+ CHECK(wf_activate(s,"tenant-a","run-a",rev,1,&e,&v)==WF_OK);
+ CHECK(wf_claim_dispatch(s,"tenant-a","run-a",rev,e,v,"step-1","key-1",digest,&next)==WF_FENCED);
+ CHECK(wf_finish(s,"tenant-a","run-a",rev,e,v,&next)==WF_FENCED);
+ wf_close(s);std::cout<<"native-sqlite SIGKILL-before-dispatch PASS\n";
+}
+static void test_same_handle_thread_race() {
+ Ctx c;c.dir=dir();wf_store *s=open(c);int64_t e,v,n;
+ seed(s,e,v);accept(s,e,v,n);v=n;
+ int rc1=99,rc2=99;
+ std::thread one([&]{int64_t next;rc1=wf_claim_dispatch(s,"tenant-a","run-a",rev,e,v,"step-1","key-1",digest,&next);});
+ std::thread two([&]{int64_t next;rc2=wf_claim_dispatch(s,"tenant-a","run-a",rev,e,v,"step-1","key-1",digest,&next);});
+ one.join();two.join();
+ CHECK((rc1==WF_OK && rc2==WF_FENCED)||(rc2==WF_OK && rc1==WF_FENCED));
+ snapshot(s,e,v+1,0,1,0,0,1);wf_close(s);
+ std::cout<<"native-sqlite same-handle-thread-fence PASS\n";
+}
 int main(){
  Ctx c;c.dir=dir();wf_store *s=nullptr;
  CHECK(wf_open(c.dir.c_str(),nullptr,verify,&c,&s)==WF_INVALID);
  CHECK(wf_open(c.dir.c_str(),authorize,nullptr,&c,&s)==WF_INVALID);
  test_atomic_and_replay();test_epoch_during_verification();test_sigkill();test_claim_race();test_unsafe_path();
- std::cout<<"NATIVE_SQLITE_RESULT passed=true cases=5 scope=host-C++-SQLite-not-Oreslang-guest\n";
+ test_killed_before_external_dispatch();test_same_handle_thread_race();
+ std::cout<<"NATIVE_SQLITE_RESULT passed=true cases=7 scope=host-C++-SQLite-not-Oreslang-guest\n";
 }
