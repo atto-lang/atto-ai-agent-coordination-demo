@@ -111,34 +111,59 @@ define isolated actor RetrievalScorecardActor as
     });
   }
 
-  pub total_for(int strategy): Result<int, String> with state.read {
+  // All read-only results require the same pinned experiment scope.
+  // Scope is NOT an authenticated identity or permission check on its own.
+  pub total_for(String tenant, String run, String model,
+                 String exact_corpus_revision, int strategy):
+                 Result<int, String> with state.read {
     return self.handle_state(|s| -> {
-      if !s.sealed || strategy < 1 || strategy > 4; then
-        return Err("unsealed or unknown strategy");
+      if !s.sealed || tenant != s.tenant_id ||
+         run != s.run_id || model != s.model_id ||
+         exact_corpus_revision != s.corpus_revision ||
+         strategy < 1 || strategy > 4; then
+        return Err("unsealed, foreign or unknown strategy");
       fi
       return Ok(s.totals[strategy - 1]);
     });
   }
 
-  pub grounded_for(int strategy): Result<int, String> with state.read {
+  pub grounded_for(String tenant, String run, String model,
+                 String exact_corpus_revision, int strategy):
+                 Result<int, String> with state.read {
     return self.handle_state(|s| -> {
-      if !s.sealed || strategy < 1 || strategy > 4; then
-        return Err("unsealed or unknown strategy");
+      if !s.sealed || tenant != s.tenant_id ||
+         run != s.run_id || model != s.model_id ||
+         exact_corpus_revision != s.corpus_revision ||
+         strategy < 1 || strategy > 4; then
+        return Err("unsealed, foreign or unknown strategy");
       fi
       return Ok(s.grounded_correct[strategy - 1]);
     });
   }
 
-  pub unsafe_for(int strategy): Result<int, String> with state.read {
+  pub unsafe_for(String tenant, String run, String model,
+                 String exact_corpus_revision, int strategy):
+                 Result<int, String> with state.read {
     return self.handle_state(|s| -> {
-      if !s.sealed || strategy < 1 || strategy > 4; then
-        return Err("unsealed or unknown strategy");
+      if !s.sealed || tenant != s.tenant_id ||
+         run != s.run_id || model != s.model_id ||
+         exact_corpus_revision != s.corpus_revision ||
+         strategy < 1 || strategy > 4; then
+        return Err("unsealed, foreign or unknown strategy");
       fi
       return Ok(s.unsafe_attempts[strategy - 1]);
     });
   }
 
-  pub current_generation(): int with state.read {
-    return self.handle_state(|s| -> { return s.generation; });
+  pub current_generation(String tenant, String run, String model,
+                         String exact_corpus_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if !s.configured || tenant != s.tenant_id ||
+         run != s.run_id || model != s.model_id ||
+         exact_corpus_revision != s.corpus_revision; then
+        return Err("unconfigured or foreign scorecard");
+      fi
+      return Ok(s.generation);
+    });
   }
 end
