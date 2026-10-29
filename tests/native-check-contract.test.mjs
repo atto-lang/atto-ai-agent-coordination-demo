@@ -9,6 +9,9 @@ test('checks eight Oreslang classes and actor pipeline via real compiler --check
   assert.match(source, /'tests\/guest\/agent_pipeline\.ores'/);
   assert.match(source, /'dev\.oreslang\.launcher\.OresMain','--check',source/);
   assert.match(source, /outcomes\.length === files\.length/);
+  assert.match(source, /negative\/wrong_actor_mail_type\.ores/);
+  assert.match(source, /ActorRef\.send mailbox value/);
+  assert.match(source, /negative\.passed/);
 });
 test('missing compiler identity fails closed with nonzero exit', () => {
   const env={...process.env};
