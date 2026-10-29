@@ -1,55 +1,66 @@
 // Bounded capture of immutable event envelopes. Provenance is an untrusted
 // claim until an external trusted adapter has verified it. No network I/O.
 define isolated actor MemoryIngestionActor as
-  let Array<String> event_ids = new Array<String>();
-  let Array<String> repositories = new Array<String>();
-  let Array<String> revisions = new Array<String>();
-  let Array<String> source_refs = new Array<String>();
-  let Array<String> digests = new Array<String>();
-  let Array<int> kinds = new Array<int>();
-  let Array<bool> acknowledged = new Array<bool>();
+  state {
+    event_ids: Array<String> = new Array<String>();
+    repositories: Array<String> = new Array<String>();
+    revisions: Array<String> = new Array<String>();
+    source_refs: Array<String> = new Array<String>();
+    digests: Array<String> = new Array<String>();
+    kinds: Array<int> = new Array<int>();
+    acknowledged: Array<bool> = new Array<bool>();
+  }
 
   // kind: 1 Git, 2 CI, 3 agent observation, 4 documentation.
   // Tickets are 1-based and never recycled within an incarnation.
   pub ingest(String event_id, String repo, String revision,
                  String source_ref, String digest,
-                 int kind): Result<int, String> {
-    if event_id == "" || repo == "" || revision == "" ||
-       source_ref == "" || digest == "" || kind < 1 || kind > 4; then
-      return Err("invalid event envelope");
-    fi
-    if self.event_ids.size >= 512; then return Err("ingestion full"); fi
-    for (const existing of self.event_ids) {
-      if existing == event_id; then return Err("duplicate event"); fi
-    }
-    self.event_ids.add(event_id);
-    self.repositories.add(repo);
-    self.revisions.add(revision);
-    self.source_refs.add(source_ref);
-    self.digests.add(digest);
-    self.kinds.add(kind);
-    self.acknowledged.add(false);
-    return Ok(self.event_ids.size);
+                 int kind): Result<int, String> with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if event_id == "" || repo == "" || revision == "" ||
+         source_ref == "" || digest == "" || kind < 1 || kind > 4; then
+        return Err("invalid event envelope");
+      fi
+      if s.event_ids.size >= 512; then return Err("ingestion full"); fi
+      for (const existing of s.event_ids) {
+        if existing == event_id; then return Err("duplicate event"); fi
+      }
+      s.event_ids.add(event_id);
+      s.repositories.add(repo);
+      s.revisions.add(revision);
+      s.source_refs.add(source_ref);
+      s.digests.add(digest);
+      s.kinds.add(kind);
+      s.acknowledged.add(false);
+      return Ok(s.event_ids.size);
+    });
   }
 
   // The caller must not acknowledge before the downstream append is durable.
   // This local flag is NOT a transactional outbox or delivery guarantee.
   pub acknowledge(int ticket, String event_id,
-                      String digest): bool {
-    if ticket <= 0 || ticket > self.event_ids.size; then return false; fi
-    val int index = ticket - 1;
-    if self.event_ids[index] != event_id ||
-       self.digests[index] != digest ||
-       self.acknowledged[index]; then return false; fi
-    self.acknowledged[index] = true;
-    return true;
+                      String digest): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if ticket <= 0 || ticket > s.event_ids.size; then return false; fi
+      val int index = ticket - 1;
+      if s.event_ids[index] != event_id ||
+         s.digests[index] != digest ||
+         s.acknowledged[index]; then return false; fi
+      s.acknowledged[index] = true;
+      return true;
+    });
   }
 
-  pub pending(int ticket, String event_id): bool {
-    if ticket <= 0 || ticket > self.event_ids.size; then return false; fi
-    val int index = ticket - 1;
-    return self.event_ids[index] == event_id && !self.acknowledged[index];
+  pub pending(int ticket, String event_id): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if ticket <= 0 || ticket > s.event_ids.size; then return false; fi
+      val int index = ticket - 1;
+      return s.event_ids[index] == event_id && !s.acknowledged[index];
+    });
   }
 
-  pub size(): int { return self.event_ids.size; }
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {   return s.event_ids.size;
+    });
+  }
 end

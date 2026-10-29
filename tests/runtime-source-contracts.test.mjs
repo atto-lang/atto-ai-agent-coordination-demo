@@ -24,41 +24,41 @@ for (const [path, actor, methods] of actorInfo) {
 test('routing is identity and route-epoch pinned', () => {
   const s = read('actor_route_directory');
   for (const x of [
-    'self.incarnations[i] != expected_incarnation',
-    'self.route_epochs[i] != expected_epoch',
+    's.incarnations[i] != expected_incarnation',
+    's.route_epochs[i] != expected_epoch',
     'next_incarnation <= expected_incarnation',
-    'self.incarnations[i] != incarnation',
-    'self.generations[i] != generation',
-    'self.route_epochs[i] != epoch',
-    'self.active[i] = false',
-    'self.actor_ids.size >= 512'
+    's.incarnations[i] != incarnation',
+    's.generations[i] != generation',
+    's.route_epochs[i] != epoch',
+    's.active[i] = false',
+    's.actor_ids.size >= 512'
   ]) assert.ok(s.includes(x), x);
 });
 test('graph supports dependency fan-in with CAS and fail-closed states', () => {
   const s = read('execution_graph');
   for (const x of [
-    'self.node_ids.size >= 128',
-    'self.dependents.size >= 512',
+    's.node_ids.size >= 128',
+    's.dependents.size >= 512',
     'prerequisite_pos >= node_pos',
-    'if self.sealed || node == prerequisite',
+    'if s.sealed || node == prerequisite',
     'if !found; then return false; fi',
-    'expected_revision != self.revision',
-    'self.node_states[i] == 1',
-    'self.node_states[i] = 3',
-    'self.node_states[i] = 4'
+    'expected_revision != s.revision',
+    's.node_states[i] == 1',
+    's.node_states[i] = 3',
+    's.node_states[i] = 4'
   ]) assert.ok(s.includes(x), x);
 });
 test('dispatched effects remain unknown until reconciliation', () => {
   const s = read('workflow_effect_ledger');
   for (const x of [
-    'self.effect_keys.size >= 256',
+    's.effect_keys.size >= 256',
     'if existing == effect_key; then return false; fi',
-    'self.states[i] = 1',
-    'self.states[i] == 1',
-    'self.states[i] = 2',
-    'self.states[i] = 4',
-    'self.states[i] = 3',
+    's.states[i] = 1',
+    's.states[i] == 1',
+    's.states[i] = 2',
+    's.states[i] = 4',
+    's.states[i] = 3',
     'receipt == ""',
-    'expected_epoch != self.transition_epoch'
+    'expected_epoch != s.transition_epoch'
   ]) assert.ok(s.includes(x), x);
 });

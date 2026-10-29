@@ -150,3 +150,7 @@ The suite combines source-contract assertions, six JavaScript DAG/cache referenc
 - Non-reentrant actor state access; no blocking calls in handlers.
 - Do not conflate declared actor isolation with proven dedicated physical heaps or OS isolation.
 - No private-source transfer to an alternate GitHub organization without independent authorization.
+
+## Actor state ownership
+
+Every stateful AI-agent actor uses one `state { ... }` schema; writes go through `self.handle_state(critical write |s| -> { ... })` and reads through scoped read callbacks. See [Actor state-loan contract](docs/ACTOR_STATE_LOANS.md). Source-only validation is not a substitute for Java/Graal and LLVM compiler-backed guest execution.

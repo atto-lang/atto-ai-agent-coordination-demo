@@ -2,34 +2,43 @@
 // Do not confuse this with an authenticated transport or a lease service.
 // Re-registration is rejected; supervisor issues a new incarnation identity.
 define isolated actor AgentRegistryActor as
-  let Array<String> identities = new Array<String>();
-  let Array<String> capabilities = new Array<String>();
-  let Array<int> incarnations = new Array<int>();
-  let int revision = 0;
+  state {
+    identities: Array<String> = new Array<String>();
+    capabilities: Array<String> = new Array<String>();
+    incarnations: Array<int> = new Array<int>();
+    revision: int = 0;
+  }
 
-  pub register(String id, String capability, int incarnation): bool {
-    if id == "" || capability == "" || incarnation <= 0 ||
-       self.identities.size >= 1024; then return false; fi
-    for (const existing of self.identities) {
-      if existing == id; then return false; fi
-    }
-    self.identities.add(id);
-    self.capabilities.add(capability);
-    self.incarnations.add(incarnation);
-    self.revision = self.revision + 1;
-    return true;
+  pub register(String id, String capability, int incarnation): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if id == "" || capability == "" || incarnation <= 0 ||
+         s.identities.size >= 1024; then return false; fi
+      for (const existing of s.identities) {
+        if existing == id; then return false; fi
+      }
+      s.identities.add(id);
+      s.capabilities.add(capability);
+      s.incarnations.add(incarnation);
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
   pub supports(String id, int incarnation,
-                   String capability): bool {
-    let int i = 0;
-    for (const existing of self.identities) {
-      if existing == id && self.incarnations[i] == incarnation &&
-         self.capabilities[i] == capability; then return true; fi
-      i = i + 1;
-    }
-    return false;
+                   String capability): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      let int i = 0;
+      for (const existing of s.identities) {
+        if existing == id && s.incarnations[i] == incarnation &&
+           s.capabilities[i] == capability; then return true; fi
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
-  pub current_revision(): int { return self.revision; }
+  pub current_revision(): int with state.read {
+    return self.handle_state(|s| -> {   return s.revision;
+    });
+  }
 end

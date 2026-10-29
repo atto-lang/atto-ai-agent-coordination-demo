@@ -3,45 +3,59 @@
 // Stage values: 0 idle; 1 planned; 2 approved; 3 running; 4 completed;
 // 5 cancelled. Terminal stages never restart under the same identity.
 define isolated actor AgentWorkflowActor as
-  let String workflow_id = "";
-  let String revision = "";
-  let int phase = 0;
-  let int transition_number = 0;
+  state {
+    workflow_id: String = "";
+    revision: String = "";
+    phase: int = 0;
+    transition_number: int = 0;
+  }
 
-  pub start(String id, String exact_revision): bool {
-    if self.phase != 0 || id == "" || exact_revision == ""; then
-      return false;
-    fi
-    self.workflow_id = id;
-    self.revision = exact_revision;
-    self.phase = 1;
-    self.transition_number = self.transition_number + 1;
-    return true;
+  pub start(String id, String exact_revision): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if s.phase != 0 || id == "" || exact_revision == ""; then
+        return false;
+      fi
+      s.workflow_id = id;
+      s.revision = exact_revision;
+      s.phase = 1;
+      s.transition_number = s.transition_number + 1;
+      return true;
+    });
   }
 
   pub advance(String id, String exact_revision,
-                  int expected_transition, int next_phase): bool {
-    if id != self.workflow_id || exact_revision != self.revision ||
-       expected_transition != self.transition_number; then
-      return false;
-    fi
-    if self.phase == 1 && next_phase != 2; then return false; fi
-    if self.phase == 2 && next_phase != 3; then return false; fi
-    if self.phase == 3 && next_phase != 4; then return false; fi
-    if self.phase < 1 || self.phase > 3; then return false; fi
-    self.phase = next_phase;
-    self.transition_number = self.transition_number + 1;
-    return true;
+                  int expected_transition, int next_phase): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if id != s.workflow_id || exact_revision != s.revision ||
+         expected_transition != s.transition_number; then
+        return false;
+      fi
+      if s.phase == 1 && next_phase != 2; then return false; fi
+      if s.phase == 2 && next_phase != 3; then return false; fi
+      if s.phase == 3 && next_phase != 4; then return false; fi
+      if s.phase < 1 || s.phase > 3; then return false; fi
+      s.phase = next_phase;
+      s.transition_number = s.transition_number + 1;
+      return true;
+    });
   }
 
-  pub cancel(String id, int expected_transition): bool {
-    if id != self.workflow_id || expected_transition != self.transition_number ||
-       self.phase < 1 || self.phase >= 4; then return false; fi
-    self.phase = 5;
-    self.transition_number = self.transition_number + 1;
-    return true;
+  pub cancel(String id, int expected_transition): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if id != s.workflow_id || expected_transition != s.transition_number ||
+         s.phase < 1 || s.phase >= 4; then return false; fi
+      s.phase = 5;
+      s.transition_number = s.transition_number + 1;
+      return true;
+    });
   }
 
-  pub stage(): int { return self.phase; }
-  pub revision_number(): int { return self.transition_number; }
+  pub stage(): int with state.read {
+    return self.handle_state(|s| -> {   return s.phase;
+    });
+  }
+  pub revision_number(): int with state.read {
+    return self.handle_state(|s| -> {   return s.transition_number;
+    });
+  }
 end

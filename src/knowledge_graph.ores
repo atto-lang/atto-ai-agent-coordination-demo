@@ -2,69 +2,96 @@
 // No graph node is a separate scheduled actor. Returned arrays are new copies.
 // Authoritative cross-shard consistency belongs to a higher-level coordinator.
 define isolated actor KnowledgeGraphActor as
-  let Array<String> ids = new Array<String>();
-  let Array<String> labels = new Array<String>();
-  let Array<String> edge_from = new Array<String>();
-  let Array<String> edge_to = new Array<String>();
-  let Array<String> edge_kind = new Array<String>();
-  let int revision = 0;
-
-  pub add_entity(String id, String label): bool {
-    if id == "" || self.ids.size >= 4096; then return false; fi
-    for (const existing of self.ids) {
-      if existing == id; then return false; fi
-    }
-    self.ids.add(id);
-    self.labels.add(label);
-    self.revision = self.revision + 1;
-    return true;
+  state {
+    ids: Array<String> = new Array<String>();
+    labels: Array<String> = new Array<String>();
+    edge_from: Array<String> = new Array<String>();
+    edge_to: Array<String> = new Array<String>();
+    edge_kind: Array<String> = new Array<String>();
+    revision: int = 0;
   }
 
-  pub contains(String id): bool {
-    for (const existing of self.ids) {
-      if existing == id; then return true; fi
-    }
-    return false;
+  pub add_entity(String id, String label): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if id == "" || s.ids.size >= 4096; then return false; fi
+      for (const existing of s.ids) {
+        if existing == id; then return false; fi
+      }
+      s.ids.add(id);
+      s.labels.add(label);
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
-  pub label_of(String id): Result<String, String> {
-    let int i = 0;
-    for (const existing of self.ids) {
-      if existing == id; then return Ok(self.labels[i]); fi
-      i = i + 1;
-    }
-    return Err("unknown entity");
+  pub contains(String id): bool with state.read {
+    return self.handle_state(|s| -> {
+      for (const existing of s.ids) {
+        if existing == id; then return true; fi
+      }
+      return false;
+    });
   }
 
-  pub add_edge(String source, String target, String kind): bool {
-    if kind == "" || self.edge_from.size >= 16384; then return false; fi
-    if !self.contains(source) || !self.contains(target); then return false; fi
-    let int i = 0;
-    for (const existing of self.edge_from) {
-      if existing == source && self.edge_to[i] == target &&
-         self.edge_kind[i] == kind; then return false; fi
-      i = i + 1;
-    }
-    self.edge_from.add(source);
-    self.edge_to.add(target);
-    self.edge_kind.add(kind);
-    self.revision = self.revision + 1;
-    return true;
+  pub label_of(String id): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
+      let int i = 0;
+      for (const existing of s.ids) {
+        if existing == id; then return Ok(s.labels[i]); fi
+        i = i + 1;
+      }
+      return Err("unknown entity");
+    });
   }
 
-  pub neighbors(String source, String kind): Array<String> {
-    let mut Array<String> result = new Array<String>();
-    let int i = 0;
-    for (const from of self.edge_from) {
-      if from == source && self.edge_kind[i] == kind; then
-        result.add(self.edge_to[i]);
-      fi
-      i = i + 1;
-    }
-    return result;
+  pub add_edge(String source, String target, String kind): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if kind == "" || s.edge_from.size >= 16384; then return false; fi
+      let bool source_known = false;
+      let bool target_known = false;
+      for (const known of s.ids) {
+        if known == source; then source_known = true; fi
+        if known == target; then target_known = true; fi
+      }
+      if !source_known || !target_known; then return false; fi
+      let int i = 0;
+      for (const existing of s.edge_from) {
+        if existing == source && s.edge_to[i] == target &&
+           s.edge_kind[i] == kind; then return false; fi
+        i = i + 1;
+      }
+      s.edge_from.add(source);
+      s.edge_to.add(target);
+      s.edge_kind.add(kind);
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
-  pub entity_count(): int { return self.ids.size; }
-  pub edge_count(): int { return self.edge_from.size; }
-  pub current_revision(): int { return self.revision; }
+  pub neighbors(String source, String kind): Array<String> with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      let mut Array<String> result = new Array<String>();
+      let int i = 0;
+      for (const from of s.edge_from) {
+        if from == source && s.edge_kind[i] == kind; then
+          result.add(s.edge_to[i]);
+        fi
+        i = i + 1;
+      }
+      return result;
+    });
+  }
+
+  pub entity_count(): int with state.read {
+    return self.handle_state(|s| -> {   return s.ids.size;
+    });
+  }
+  pub edge_count(): int with state.read {
+    return self.handle_state(|s| -> {   return s.edge_from.size;
+    });
+  }
+  pub current_revision(): int with state.read {
+    return self.handle_state(|s| -> {   return s.revision;
+    });
+  }
 end

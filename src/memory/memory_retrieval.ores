@@ -2,86 +2,99 @@
 // Only a capability-authorized indexer may publish or revoke records.
 // This actor cannot independently authenticate a caller or receipt string.
 define isolated actor MemoryRetrievalActor as
-  let Array<String> ids = new Array<String>();
-  let Array<String> repositories = new Array<String>();
-  let Array<String> branches = new Array<String>();
-  let Array<String> revisions = new Array<String>();
-  let Array<String> subjects = new Array<String>();
-  let Array<String> contents = new Array<String>();
-  let Array<String> evidence_refs = new Array<String>();
-  let Array<bool> active = new Array<bool>();
+  state {
+    ids: Array<String> = new Array<String>();
+    repositories: Array<String> = new Array<String>();
+    branches: Array<String> = new Array<String>();
+    revisions: Array<String> = new Array<String>();
+    subjects: Array<String> = new Array<String>();
+    contents: Array<String> = new Array<String>();
+    evidence_refs: Array<String> = new Array<String>();
+    active: Array<bool> = new Array<bool>();
+  }
 
   pub publish(String id, String repo, String branch, String revision,
                   String subject, String content,
-                  String evidence_ref): bool {
-    if id == "" || repo == "" || branch == "" || revision == "" ||
-       subject == "" || content == "" || evidence_ref == "" ||
-       self.ids.size >= 1024; then return false; fi
-    for (const existing of self.ids) {
-      if existing == id; then return false; fi
-    }
-    self.ids.add(id);
-    self.repositories.add(repo);
-    self.branches.add(branch);
-    self.revisions.add(revision);
-    self.subjects.add(subject);
-    self.contents.add(content);
-    self.evidence_refs.add(evidence_ref);
-    self.active.add(true);
-    return true;
+                  String evidence_ref): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if id == "" || repo == "" || branch == "" || revision == "" ||
+         subject == "" || content == "" || evidence_ref == "" ||
+         s.ids.size >= 1024; then return false; fi
+      for (const existing of s.ids) {
+        if existing == id; then return false; fi
+      }
+      s.ids.add(id);
+      s.repositories.add(repo);
+      s.branches.add(branch);
+      s.revisions.add(revision);
+      s.subjects.add(subject);
+      s.contents.add(content);
+      s.evidence_refs.add(evidence_ref);
+      s.active.add(true);
+      return true;
+    });
   }
 
   // A superseded or rejected record must be explicitly withdrawn.
-  pub withdraw(String id, String evidence_ref): bool {
-    let int i = 0;
-    for (const existing of self.ids) {
-      if existing == id; then
-        if self.evidence_refs[i] != evidence_ref || !self.active[i]; then
-          return false;
+  pub withdraw(String id, String evidence_ref): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      let int i = 0;
+      for (const existing of s.ids) {
+        if existing == id; then
+          if s.evidence_refs[i] != evidence_ref || !s.active[i]; then
+            return false;
+          fi
+          s.active[i] = false;
+          return true;
         fi
-        self.active[i] = false;
-        return true;
-      fi
-      i = i + 1;
-    }
-    return false;
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
   // Exact subject + branch + revision; no fuzzy or embedding claim.
   // Consumers must separately check MemoryInvalidationActor before acting.
   pub recall_ids(String repo, String branch, String revision,
-                     String subject, int limit): Result<Array<String>, String> {
-    if repo == "" || branch == "" || revision == "" || subject == "" ||
-       limit < 1 || limit > 16; then return Err("invalid recall scope"); fi
-    let mut Array<String> found = new Array<String>();
-    let int i = 0;
-    for (const existing of self.ids) {
-      if self.active[i] && self.repositories[i] == repo &&
-         self.branches[i] == branch && self.revisions[i] == revision &&
-         self.subjects[i] == subject && found.size < limit; then
-        found.add(existing);
-      fi
-      i = i + 1;
-    }
-    return Ok(found);
+                     String subject, int limit): Result<Array<String>, String> with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if repo == "" || branch == "" || revision == "" || subject == "" ||
+         limit < 1 || limit > 16; then return Err("invalid recall scope"); fi
+      let mut Array<String> found = new Array<String>();
+      let int i = 0;
+      for (const existing of s.ids) {
+        if s.active[i] && s.repositories[i] == repo &&
+           s.branches[i] == branch && s.revisions[i] == revision &&
+           s.subjects[i] == subject && found.size < limit; then
+          found.add(existing);
+        fi
+        i = i + 1;
+      }
+      return Ok(found);
+    });
   }
 
   pub read(String id, String repo, String branch,
-               String revision, String evidence_ref): Result<String, String> {
-    let int i = 0;
-    for (const existing of self.ids) {
-      if existing == id; then
-        if !self.active[i] || self.repositories[i] != repo ||
-           self.branches[i] != branch || self.revisions[i] != revision ||
-           self.evidence_refs[i] != evidence_ref; then
-          return Err("stale or unverified memory view");
+               String revision, String evidence_ref): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
+      let int i = 0;
+      for (const existing of s.ids) {
+        if existing == id; then
+          if !s.active[i] || s.repositories[i] != repo ||
+             s.branches[i] != branch || s.revisions[i] != revision ||
+             s.evidence_refs[i] != evidence_ref; then
+            return Err("stale or unverified memory view");
+          fi
+          return Ok(s.contents[i]);
         fi
-        return Ok(self.contents[i]);
-      fi
-      i = i + 1;
-    }
-    return Err("memory unavailable");
+        i = i + 1;
+      }
+      return Err("memory unavailable");
+    });
   }
 
-  pub size(): int { return self.ids.size; }
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {   return s.ids.size;
+    });
+  }
 end

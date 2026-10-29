@@ -2,150 +2,201 @@
 // Edges point to earlier-declared prerequisite nodes, forming a DAG.
 // State transitions represent plans; no tool or LLM is executed here.
 define isolated actor ExecutionGraphActor as
-  let Array<String> node_ids = new Array<String>();
-  let Array<int> node_states = new Array<int>();
-  let Array<String> dependents = new Array<String>();
-  let Array<String> prerequisites = new Array<String>();
-  let int revision = 0;
-  let bool sealed = false;
+  state {
+    node_ids: Array<String> = new Array<String>();
+    node_states: Array<int> = new Array<int>();
+    dependents: Array<String> = new Array<String>();
+    prerequisites: Array<String> = new Array<String>();
+    revision: int = 0;
+    sealed: bool = false;
+  }
 
   // State: 0 pending, 1 running, 2 succeeded, 3 failed, 4 cancelled.
-  pub add_node(String id): bool {
-    if self.sealed || id == "" || self.node_ids.size >= 128 ||
-       self.revision >= 2147483646; then return false; fi
-    for (const existing of self.node_ids) {
-      if existing == id; then return false; fi
-    }
-    self.node_ids.add(id);
-    self.node_states.add(0);
-    self.revision = self.revision + 1;
-    return true;
+  pub add_node(String id): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if s.sealed || id == "" || s.node_ids.size >= 128 ||
+         s.revision >= 2147483646; then return false; fi
+      for (const existing of s.node_ids) {
+        if existing == id; then return false; fi
+      }
+      s.node_ids.add(id);
+      s.node_states.add(0);
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
-  pub depends_on(String node, String prerequisite): bool {
-    if self.sealed || node == prerequisite ||
-       self.dependents.size >= 512 ||
-       self.revision >= 2147483646; then return false; fi
-    let int node_pos = -1;
-    let int prerequisite_pos = -1;
-    let int i = 0;
-    for (const existing of self.node_ids) {
-      if existing == node; then node_pos = i; fi
-      if existing == prerequisite; then prerequisite_pos = i; fi
-      i = i + 1;
-    }
-    // Earlier dependencies only; no cycles and no undeclared targets.
-    if node_pos < 0 || prerequisite_pos < 0 ||
-       prerequisite_pos >= node_pos; then return false; fi
-    let int j = 0;
-    for (const existing of self.dependents) {
-      if existing == node && self.prerequisites[j] == prerequisite; then
-        return false;
-      fi
-      j = j + 1;
-    }
-    self.dependents.add(node);
-    self.prerequisites.add(prerequisite);
-    self.revision = self.revision + 1;
-    return true;
+  pub depends_on(String node, String prerequisite): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if s.sealed || node == prerequisite ||
+         s.dependents.size >= 512 ||
+         s.revision >= 2147483646; then return false; fi
+      let int node_pos = -1;
+      let int prerequisite_pos = -1;
+      let int i = 0;
+      for (const existing of s.node_ids) {
+        if existing == node; then node_pos = i; fi
+        if existing == prerequisite; then prerequisite_pos = i; fi
+        i = i + 1;
+      }
+      // Earlier dependencies only; no cycles and no undeclared targets.
+      if node_pos < 0 || prerequisite_pos < 0 ||
+         prerequisite_pos >= node_pos; then return false; fi
+      let int j = 0;
+      for (const existing of s.dependents) {
+        if existing == node && s.prerequisites[j] == prerequisite; then
+          return false;
+        fi
+        j = j + 1;
+      }
+      s.dependents.add(node);
+      s.prerequisites.add(prerequisite);
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
-  pub seal(int expected_revision): bool {
-    if self.sealed || self.node_ids.size == 0 ||
-       expected_revision != self.revision ||
-       self.revision >= 2147483646; then return false; fi
-    self.sealed = true;
-    self.revision = self.revision + 1;
-    return true;
+  pub seal(int expected_revision): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if s.sealed || s.node_ids.size == 0 ||
+         expected_revision != s.revision ||
+         s.revision >= 2147483646; then return false; fi
+      s.sealed = true;
+      s.revision = s.revision + 1;
+      return true;
+    });
   }
 
   // This read is a candidate list only. A scheduler must re-check start()
   // and authenticate worker identity before dispatching any action.
-  pub ready(int expected_revision): Result<Array<String>, String> {
-    if !self.sealed || expected_revision != self.revision; then
-      return Err("stale execution graph");
-    fi
-    let mut Array<String> result = new Array<String>();
-    let int i = 0;
-    for (const node of self.node_ids) {
-      if self.node_states[i] == 0 && self.prerequisites_done(node); then
-        result.add(node);
+  pub ready(int expected_revision): Result<Array<String>, String> with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if !s.sealed || expected_revision != s.revision; then
+        return Err("stale execution graph");
       fi
-      i = i + 1;
-    }
-    return Ok(result);
+      let mut Array<String> result = new Array<String>();
+      let int i = 0;
+      for (const node of s.node_ids) {
+        if s.node_states[i] == 0; then
+          let bool all_done = true;
+          let int edge = 0;
+          for (const dependent of s.dependents) {
+            if dependent == node; then
+              let bool found = false;
+              let int prior = 0;
+              for (const known of s.node_ids) {
+                if known == s.prerequisites[edge] &&
+                   s.node_states[prior] == 2; then found = true; fi
+                prior = prior + 1;
+              }
+              if !found; then all_done = false; fi
+            fi
+            edge = edge + 1;
+          }
+          if all_done; then result.add(node); fi
+        fi
+        i = i + 1;
+      }
+      return Ok(result);
+    });
   }
 
-  prerequisites_done(String node): bool {
-    let int i = 0;
-    for (const dependent of self.dependents) {
-      if dependent == node; then
-        let int j = 0;
-        let bool found = false;
-        for (const known of self.node_ids) {
-          if known == self.prerequisites[i] &&
-             self.node_states[j] == 2; then found = true; fi
-          j = j + 1;
-        }
-        if !found; then return false; fi
-      fi
-      i = i + 1;
-    }
-    return true;
+  prerequisites_done(String node): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      let int i = 0;
+      for (const dependent of s.dependents) {
+        if dependent == node; then
+          let int j = 0;
+          let bool found = false;
+          for (const known of s.node_ids) {
+            if known == s.prerequisites[i] &&
+               s.node_states[j] == 2; then found = true; fi
+            j = j + 1;
+          }
+          if !found; then return false; fi
+        fi
+        i = i + 1;
+      }
+      return true;
+    });
   }
 
-  pub start(String node, int expected_revision): bool {
-    if !self.sealed || expected_revision != self.revision ||
-       self.revision >= 2147483646 ||
-       !self.prerequisites_done(node); then return false; fi
-    let int i = 0;
-    for (const existing of self.node_ids) {
-      if existing == node && self.node_states[i] == 0; then
-        self.node_states[i] = 1;
-        self.revision = self.revision + 1;
-        return true;
-      fi
-      i = i + 1;
-    }
-    return false;
+  pub start(String node, int expected_revision): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if !s.sealed || expected_revision != s.revision ||
+         s.revision >= 2147483646 ||
+         node == ""; then return false; fi
+      // Check prerequisites in the same exclusive state loan as admission.
+      let int edge = 0;
+      for (const dependent of s.dependents) {
+        if dependent == node; then
+          let bool found = false;
+          let int prior = 0;
+          for (const known of s.node_ids) {
+            if known == s.prerequisites[edge] &&
+               s.node_states[prior] == 2; then found = true; fi
+            prior = prior + 1;
+          }
+          if !found; then return false; fi
+        fi
+        edge = edge + 1;
+      }
+      let int i = 0;
+      for (const existing of s.node_ids) {
+        if existing == node && s.node_states[i] == 0; then
+          s.node_states[i] = 1;
+          s.revision = s.revision + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
   pub settle(String node, int expected_revision,
-                 bool succeeded): bool {
-    if !self.sealed || expected_revision != self.revision ||
-       self.revision >= 2147483646; then return false; fi
-    let int i = 0;
-    for (const existing of self.node_ids) {
-      if existing == node && self.node_states[i] == 1; then
-        if succeeded; then
-          self.node_states[i] = 2;
-        else
-          self.node_states[i] = 3;
+                 bool succeeded): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if !s.sealed || expected_revision != s.revision ||
+         s.revision >= 2147483646; then return false; fi
+      let int i = 0;
+      for (const existing of s.node_ids) {
+        if existing == node && s.node_states[i] == 1; then
+          if succeeded; then
+            s.node_states[i] = 2;
+          else
+            s.node_states[i] = 3;
+          fi
+          s.revision = s.revision + 1;
+          return true;
         fi
-        self.revision = self.revision + 1;
-        return true;
-      fi
-      i = i + 1;
-    }
-    return false;
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
   // Cancellation is possible only before a task is dispatched.
   // Running tasks require an external cancellation/compensation protocol.
-  pub cancel_pending(String node, int expected_revision): bool {
-    if !self.sealed || expected_revision != self.revision ||
-       self.revision >= 2147483646; then return false; fi
-    let int i = 0;
-    for (const existing of self.node_ids) {
-      if existing == node && self.node_states[i] == 0; then
-        self.node_states[i] = 4;
-        self.revision = self.revision + 1;
-        return true;
-      fi
-      i = i + 1;
-    }
-    return false;
+  pub cancel_pending(String node, int expected_revision): bool with state.read, state.write {
+    return self.handle_state(critical write |s| -> {
+      if !s.sealed || expected_revision != s.revision ||
+         s.revision >= 2147483646; then return false; fi
+      let int i = 0;
+      for (const existing of s.node_ids) {
+        if existing == node && s.node_states[i] == 0; then
+          s.node_states[i] = 4;
+          s.revision = s.revision + 1;
+          return true;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
   }
 
-  pub current_revision(): int { return self.revision; }
+  pub current_revision(): int with state.read {
+    return self.handle_state(|s| -> {   return s.revision;
+    });
+  }
 end
