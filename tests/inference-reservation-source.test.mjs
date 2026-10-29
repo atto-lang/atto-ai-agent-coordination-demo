@@ -60,3 +60,17 @@ test('state is pure Oreslang and never pretends to call an inference server', ()
   assert.doesNotMatch(source, /self\.(?!handle_state\()/);
   assert.ok(source.includes('This reserves declared request units'));
 });
+
+test('all observation methods reject foreign tenant/model/revision before returning counters', () => {
+  for (const name of ['current_generation', 'in_flight', 'reserved_capacity', 'current_phase']) {
+    const next = ({ current_generation: 'in_flight', in_flight: 'reserved_capacity',
+      reserved_capacity: 'current_phase' })[name];
+    const body = extract(name, next);
+    for (const guard of ['s.phase == 0', 'tenant != s.tenant_id',
+      'model != s.model_id', 'exact_revision != s.source_revision']) {
+      assert.ok(body.includes(guard), name + ' must reject ' + guard);
+    }
+    assert.ok(body.includes('return Err("foreign or unconfigured'));
+    assert.ok(body.includes('return Ok('));
+  }
+});
