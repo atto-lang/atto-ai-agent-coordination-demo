@@ -35,7 +35,13 @@ export class SqliteWorkflowSupervisor {
     }
     if (fd!==undefined) closeSync(fd);
     this.#db = new DatabaseSync(path);
-    this.#db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=1000;');
+    // Install SQLite busy handling BEFORE trying any WAL-mode transition.
+    // Repeating journal_mode=WAL on an already-WAL DB needlessly competes
+    // for an exclusive lock during concurrent process startup.
+    this.#db.exec('PRAGMA busy_timeout=5000;');
+    const mode=this.#db.prepare('PRAGMA journal_mode').get();
+    if (mode.journal_mode !== 'wal') this.#db.exec('PRAGMA journal_mode=WAL;');
+    this.#db.exec('PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;');
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS workflow (
         tenant TEXT NOT NULL, run TEXT NOT NULL, revision TEXT NOT NULL,
