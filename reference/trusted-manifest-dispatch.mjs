@@ -2,6 +2,7 @@
 // Consumes UNTRUSTED reference-only ContextAssemblyActor manifest.
 // Only this privileged host adapter may resolve excerpts and deliver to model.
 // Neither this code nor a signed context receipt authorizes tool execution.
+import { createHash } from 'node:crypto';
 import { create_context_admission } from './context-admission.mjs';
 import { create_signed_evidence_verifier } from './signed-evidence-verifier.mjs';
 
@@ -42,15 +43,16 @@ function primitiveArray(input, validate, limit) {
 // All callbacks are provided by trusted host configuration, NEVER from agent
 // input. A model-selected verifier/tokenizer/dispatcher defeats this contract.
 export function create_trusted_manifest_dispatch({
-  tenant_id, task_id, exact_revision, tokenizer_id, token_budget,
-  countTokens, trustedReceipts, keys, issuer, claimReceipt,
+  tenant_id, task_id, exact_revision, dispatch_id, tokenizer_id, token_budget,
+  countTokens, trustedReceipts, keys, issuer, claimReceipt, claimDispatch,
   resolveExcerpt, authorizeDispatch, isCurrentRevision, submitModelData,
   now = Date.now
 }) {
   if (!scopedId(tenant_id) || !scopedId(task_id) || !sha(exact_revision) ||
-      !scopedId(tokenizer_id) ||
+      !scopedId(dispatch_id) || !scopedId(tokenizer_id) ||
       [resolveExcerpt, authorizeDispatch, isCurrentRevision, submitModelData].some(x => typeof x !== 'function') ||
-      typeof claimReceipt !== 'function') throw new TypeError('trusted manifest dispatch configuration required');
+      typeof claimReceipt !== 'function' || typeof claimDispatch !== 'function')
+    throw new TypeError('trusted manifest dispatch configuration required');
 
   const verifyEvidence = create_signed_evidence_verifier({
     trustedReceipts, keys, issuer, now, claimReceipt, requireDurable: true
@@ -88,13 +90,21 @@ export function create_trusted_manifest_dispatch({
     if (!admission.seal()) return false;
     const context = admission.selected_context();
     if (!context) return false;
+    // Host-selected logical dispatch identity, never taken from the manifest.
+    // The digest pins the submitted bytes, not only a caller-declared count.
     const bound = Object.freeze({
-      ...scope, tokenizer_id, utf8_bytes: context.utf8_bytes,
-      measured_tokens: context.measured_tokens
+      ...scope, dispatch_id, tokenizer_id,
+      context_sha256: createHash('sha256').update(context.context_json, 'utf8').digest('hex'),
+      utf8_bytes: context.utf8_bytes, measured_tokens: context.measured_tokens
     });
     try {
       if (await isCurrentRevision(bound) !== true) return false;
       if (await authorizeDispatch(bound) !== true) return false;
+      // Atomic durable one-shot claim at the final host dispatch boundary.
+      // Unknown outcomes stay claimed: never silently submit twice.
+      // A claim implementation that only stores in process memory is NOT safe
+      // for recovery or concurrent hosts; use storage-enforced uniqueness.
+      if (await claimDispatch(bound) !== true) return false;
       // Untrusted model input is never an approval or a tool capability.
       // The trusted model service must have NO ambient privileged tools.
       await submitModelData(Object.freeze({
