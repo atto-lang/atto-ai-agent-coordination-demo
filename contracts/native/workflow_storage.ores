@@ -1,0 +1,25 @@
+// Oreslang-facing storage port for an OWNER-TRUSTED native adapter.
+// This is a CONTRACT, not an implementation of the C ABI or SQLite.
+// Only a verified platform adapter may implement these methods. Never
+// expose this port directly to untrusted models or remote actors.
+//
+// Method results are the new durable CAS version. The activation method
+// returns the new epoch; callers must recover the CAS version separately
+// from a trusted checkpoint. No I/O may occur inside a critical state loan.
+define contract WorkflowDurableStorage as
+  fnc create_run(String tenant, String run, String revision) => Result<int, String>;
+  fnc activate(String tenant, String run, String revision,
+               int expected_epoch) => Result<int, String>;
+  fnc accept_step(String tenant, String run, String revision,
+                  int epoch, int expected_version, String step_id,
+                  String message_id, String effect_key,
+                  String digest) => Result<int, String>;
+  fnc claim_dispatch(String tenant, String run, String revision,
+                     int epoch, int expected_version, String step_id,
+                     String effect_key, String digest) => Result<int, String>;
+  fnc reconcile(String tenant, String run, String revision,
+                int epoch, int expected_version, String step_id,
+                String outcome, String verified_receipt) => Result<int, String>;
+  fnc finish(String tenant, String run, String revision,
+             int epoch, int expected_version) => Result<int, String>;
+end
