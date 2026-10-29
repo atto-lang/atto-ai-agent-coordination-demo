@@ -75,3 +75,82 @@ static void test_atomic_and_replay() {
  CHECK(wf_finish(s,"tenant-a","run-a",rev,e,v,&next)==WF_FENCED);
  c.verified=false;CHECK(wf_reconcile(s,"tenant-a","run-a",rev,e,v,"step-1","committed","receipt-1",&next)==WF_UNAUTHORIZED);
  c.verified=true;CHECK(wf_reconcile(s,"tenant-a","run-a",rev,e,v,"step-1","committed","receipt-1",&next)==WF_OK);
+ v=next;snapshot(s,e,v,0,0,1,0,1);
+ CHECK(wf_reconcile(s,"tenant-a","run-a",rev,e,v,"step-1","committed","receipt-1",&next)==WF_FENCED);
+ CHECK(wf_finish(s,"tenant-a","run-a",rev,e,v,&next)==WF_OK);
+ snapshot(s,e,next,0,0,1,0,1);
+ CHECK(wf_activate(s,"tenant-a","run-a",rev,e,&e,&v)==WF_FENCED);
+ wf_close(s);std::cout<<"native-sqlite atomic+replay PASS\n";
+}
+static void test_epoch_during_verification() {
+ Ctx c;c.dir=dir();wf_store *s=open(c);int64_t e,v,next;
+ seed(s,e,v);accept(s,e,v,next);v=next;claim(s,e,v,next);v=next;
+ c.rotate=true;
+ CHECK(wf_reconcile(s,"tenant-a","run-a",rev,e,v,"step-1","committed","receipt-1",&next)==WF_FENCED);
+ snapshot(s,2,v+1,0,1,0,0,1);
+ CHECK(wf_reconcile(s,"tenant-a","run-a",rev,2,v+1,"step-1","committed","receipt-1",&next)==WF_OK);
+ snapshot(s,2,next,0,0,1,0,1);
+ wf_close(s);std::cout<<"native-sqlite external-verify-CAS PASS\n";
+}
+static void test_sigkill() {
+ Ctx c;c.dir=dir();c.remote=c.dir+"/external.txt";
+ pid_t pid=fork();CHECK(pid>=0);
+ if(pid==0){
+   wf_store *s=open(c);int64_t e,v,next;
+   seed(s,e,v);accept(s,e,v,next);v=next;claim(s,e,v,next);
+   int fd=::open(c.remote.c_str(),O_CREAT|O_EXCL|O_WRONLY,0600);CHECK(fd>=0);
+   std::string proof="key-1|"+std::string(digest)+"|receipt-1\n";
+   CHECK(write(fd,proof.c_str(),proof.size())==(ssize_t)proof.size());
+   CHECK(fsync(fd)==0);CHECK(close(fd)==0);
+   kill(getpid(),SIGKILL);_exit(99);
+ }
+ int status;CHECK(waitpid(pid,&status,0)==pid);CHECK(WIFSIGNALED(status));CHECK(WTERMSIG(status)==SIGKILL);
+ wf_store *s=open(c);snapshot(s,1,3,0,1,0,0,1);
+ int64_t e=0,v=0,next;
+ CHECK(wf_activate(s,"tenant-a","run-a",rev,1,&e,&v)==WF_OK);
+ CHECK(e==2 && v==4);
+ CHECK(wf_claim_dispatch(s,"tenant-a","run-a",rev,e,v,"step-1","key-1",digest,&next)==WF_FENCED);
+ CHECK(wf_reconcile(s,"tenant-a","run-a",rev,e,v,"step-1","committed","receipt-1",&next)==WF_OK);
+ CHECK(wf_finish(s,"tenant-a","run-a",rev,e,next,&v)==WF_OK);
+ wf_close(s);
+ std::ifstream file(c.remote);std::string proof;std::getline(file,proof);
+ CHECK(proof=="key-1|"+std::string(digest)+"|receipt-1");
+ std::cout<<"native-sqlite SIGKILL-recovery PASS\n";
+}
+static void test_claim_race() {
+ Ctx c;c.dir=dir();wf_store *s=open(c);int64_t e,v,next;
+ seed(s,e,v);accept(s,e,v,next);v=next;wf_close(s);
+ int syncpipe[2];CHECK(pipe(syncpipe)==0);
+ pid_t children[2]{};
+ for(int i=0;i<2;i++){
+  children[i]=fork();CHECK(children[i]>=0);
+  if(children[i]==0){
+    close(syncpipe[1]);char tick;CHECK(read(syncpipe[0],&tick,1)==1);
+    wf_store *local=open(c);int64_t n=0;
+    int rc=wf_claim_dispatch(local,"tenant-a","run-a",rev,e,v,"step-1","key-1",digest,&n);
+    wf_close(local);_exit(rc==WF_OK?0:rc==WF_FENCED?7:9);
+  }
+ }
+ close(syncpipe[0]);CHECK(write(syncpipe[1],"xx",2)==2);close(syncpipe[1]);
+ int successes=0,fenced=0;
+ for(pid_t p:children){int status;CHECK(waitpid(p,&status,0)==p&&WIFEXITED(status));
+    if(WEXITSTATUS(status)==0)successes++;else if(WEXITSTATUS(status)==7)fenced++;else {std::cerr<<"child status "<<WEXITSTATUS(status)<<"\n";CHECK(false);}}
+ CHECK(successes==1 && fenced==1);
+ s=open(c);snapshot(s,e,v+1,0,1,0,0,1);wf_close(s);
+ std::cout<<"native-sqlite two-process-claim PASS\n";
+}
+static void test_unsafe_path() {
+ Ctx c;c.dir=dir();std::string target=c.dir+"/target",link=c.dir+"/workflow-native.sqlite";
+ {std::ofstream f(target);f<<"untouched";}
+ CHECK(symlink(target.c_str(),link.c_str())==0);
+ wf_store *s=nullptr;CHECK(wf_open(c.dir.c_str(),authorize,verify,&c,&s)==WF_INVALID);
+ CHECK(s==nullptr);std::ifstream f(target);std::string data;f>>data;CHECK(data=="untouched");
+ std::cout<<"native-sqlite symlink-refusal PASS\n";
+}
+int main(){
+ Ctx c;c.dir=dir();wf_store *s=nullptr;
+ CHECK(wf_open(c.dir.c_str(),nullptr,verify,&c,&s)==WF_INVALID);
+ CHECK(wf_open(c.dir.c_str(),authorize,nullptr,&c,&s)==WF_INVALID);
+ test_atomic_and_replay();test_epoch_during_verification();test_sigkill();test_claim_race();test_unsafe_path();
+ std::cout<<"NATIVE_SQLITE_RESULT passed=true cases=5 scope=host-C++-SQLite-not-Oreslang-guest\n";
+}
