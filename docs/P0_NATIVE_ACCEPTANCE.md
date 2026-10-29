@@ -36,8 +36,8 @@ The runner requires: (1) exact 40-hex compiler source HEAD, (2) clean tracked co
 
 The Java reference launcher currently implements `--check` via
 `LinkedProgramRunner.validate`. The new fail-closed gate
-`scripts/check-native-actors.mjs` invokes it against **all eight** `src/*.ores`
-actors and `tests/guest/agent_pipeline.ores`. The combined gate
+`scripts/check-native-actors.mjs` invokes it against **all 20** current actor sources in `src/`, `src/memory/`,
+`src/runtime/`, plus the `tests/guest/agent_pipeline.ores` fixture. The combined gate
 `scripts/run-native-acceptance.mjs` first requires an exact, clean **demo**
 Git HEAD and tree, then runs compiler checks, then runs the guest stdout oracle.
 It does not skip a failed actor and does not claim a native pass without
@@ -58,7 +58,7 @@ node --test tests/*.test.mjs
 node scripts/run-native-acceptance.mjs
 ```
 
-The combined gate returns `NATIVE_CHECK_RESULT` (nine compiler checks),
+The combined gate returns `NATIVE_CHECK_RESULT` (at least 21 compiler checks: 20 actors plus guest),
 `NATIVE_GUEST_RESULT` (one executed program and byte-exact stdout), and
 `NATIVE_ACCEPTANCE_RESULT` (demo source HEAD/tree) **only after all checks
 succeed**. These are distinct from host-only Node.js reference-model tests.
@@ -77,7 +77,7 @@ the observed actor-mail stdout.
 | --- | --- | --- |
 | JS specification/model | Exact test file blobs + executed TAP | Locally executed (reference tests, not Oreslang) |
 | Native demo guest | Java OresMain 0 exit, exact oracle `1|2|evidence-ready|approved|executed`, verified compiler build SHA | Pending |
-| Eight preexisting `src/*.ores` actors | Java OresMain `--check` each actor file, with diagnostics, then exercised behavioral cases | Harness committed; native checks pending |
+| 20 userland actor sources | Java OresMain `--check` for core, memory and runtime actor files, with diagnostics, followed by behavioral cases | Harness committed; native checks pending |
 | Actor cross-message causality | Child send/receive with real worker-to-worker routing, timeout/cancel checks | Pending (main router only) |
 | Authenticated authorization | Capability checks, authenticated tool receipts, fail-closed unauthenticated instructions | Pending |
 | Durable recovery reference | Node.js fsync journal replay, SIGKILL and ambiguous receipt reconciliation | Executed locally; native/distributed recovery pending |

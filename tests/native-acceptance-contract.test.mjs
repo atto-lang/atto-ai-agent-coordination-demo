@@ -9,6 +9,10 @@ test('native acceptance chains compile checks before guest execution', () => {
   assert.match(source,/expected = process\.env\.ORESLANG_DEMO_SHA/);
   assert.match(source,/HEAD\^\{tree\}/);
   assert.match(source,/--untracked-files=no/);
+  assert.match(source,/checkedActors = report.checked - checkedGuestSources/);
+  assert.match(source,/report.checked !== report.required/);
+  assert.match(source,/checkedActors < 20/);
+  assert.doesNotMatch(source,/checked_actors:8/);
 });
 test('runner refuses absent exact demo Git revision', () => {
   const env={...process.env}; delete env.ORESLANG_DEMO_SHA;

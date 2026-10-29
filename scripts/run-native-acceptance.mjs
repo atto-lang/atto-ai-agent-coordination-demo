@@ -20,6 +20,8 @@ try {
   dirty = execFileSync('git',['-C',demo,'status','--porcelain','--untracked-files=no'],opt).trim();
 } catch { fail('demo Git checkout unavailable'); }
 if (head !== expected || dirty) fail('demo revision mismatch or dirty tracked source');
+let checkedActors = 0;
+let checkedGuestSources = 0;
 for (const script of scripts) {
   const file = fileURLToPath(new URL(script, import.meta.url));
   const result = spawnSync(process.execPath, [file], {
@@ -32,7 +34,27 @@ for (const script of scripts) {
     console.error('NATIVE_ACCEPTANCE_UNVERIFIED gate=' + script);
     process.exit(1);
   }
+  if (script === 'check-native-actors.mjs') {
+    const lines = (result.stdout || '').split(/\r?\n/);
+    const reports = lines.filter(x => x.startsWith('NATIVE_CHECK_RESULT '));
+    if (reports.length !== 1) fail('missing or ambiguous compiler-check receipt');
+    let report;
+    try { report = JSON.parse(reports[0].slice('NATIVE_CHECK_RESULT '.length)); }
+    catch { fail('invalid compiler-check receipt'); }
+    if (report.passed !== true || !Number.isInteger(report.checked) ||
+        report.checked < 21 || report.checked !== report.required ||
+        !Array.isArray(report.manifest) ||
+        report.manifest.length !== report.checked ||
+        report.manifest.some(x => typeof x !== 'string') ||
+        new Set(report.manifest).size !== report.manifest.length)
+      fail('compiler-check receipt failed closed verification');
+    checkedGuestSources = report.manifest.filter(x => x.startsWith('tests/guest/')).length;
+    checkedActors = report.checked - checkedGuestSources;
+    if (checkedActors < 20 || checkedGuestSources < 1)
+      fail('insufficient native actor or guest source coverage');
+  }
 }
 console.log('NATIVE_ACCEPTANCE_RESULT ' + JSON.stringify({demo_head:head,
-  demo_tree:tree, checked_actors:8, guest_scenarios:1, passed:true,
+  demo_tree:tree, checked_actors:checkedActors, checked_guest_sources:checkedGuestSources,
+  guest_scenarios:1, passed:true,
   scope:'Java checks and one guest stdout; no crash recovery'}));
