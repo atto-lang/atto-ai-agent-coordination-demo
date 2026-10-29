@@ -187,3 +187,25 @@ catch(e){db.close();process.stdout.write('fenced');process.exitCode=7;}`;
  assert.equal(inspect(reopened).workflow.version,v+1);
  reopened.close();
 });
+
+test('receipt verifier runs outside write transaction and a concurrent activation fences stale settlement',()=>{
+ const {db,lease}=seed(directory());
+ let v=accept(db,lease.epoch,lease.version).version;
+ v=claim(db,lease.epoch,v).version;
+ let called=false;
+ assert.throws(()=>verify(db,lease.epoch,v,'receipt-1','committed',()=>{
+   called=true;
+   // A trusted controller may fence the actor while external verification
+   // is happening. Reconciliation must re-check the original epoch/CAS.
+   db.activate(tenant,run,revision,lease.epoch,
+     grant('activate',{...scope,epoch:lease.epoch}));
+   return true;
+ }),/stale generation/);
+ assert.equal(called,true);
+ assert.equal(inspect(db).effects[0].state,'in_doubt');
+ assert.equal(inspect(db).inbox[0].state,'accepted');
+ const current=inspect(db).workflow;
+ verify(db,current.epoch,current.version,'receipt-1','committed',()=>true);
+ assert.equal(inspect(db).effects[0].state,'committed');
+ db.close();
+});
