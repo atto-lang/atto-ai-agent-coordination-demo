@@ -23,7 +23,8 @@ function apply(s, e) {
       s.approved = true; s.status = 'running'; break;
     case 'INTENT':
       assert(s.status === 'running' && s.approved, 'effect not authorized');
-      assert(typeof e.key === 'string' && e.key.length > 0 && e.key.length <= 128,
+      assert(typeof e.key === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(e.key) &&
+        !['__proto__', 'constructor', 'prototype'].includes(e.key),
         'bad idempotency key');
       assert(!Object.hasOwn(s.intents, e.key), 'duplicate effect key');
       assert(typeof e.digest === 'string' && /^[a-f0-9]{64}$/.test(e.digest), 'bad digest');
