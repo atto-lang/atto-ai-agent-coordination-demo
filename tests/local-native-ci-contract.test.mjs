@@ -44,7 +44,7 @@ test('malformed demo SHA also fails without executing a build', () => {
 });
 
 test('guest-only mode has a distinct success label and does not claim sealed state', () => {
-  assert.match(source, /scope === "guest-only"/);
+  assert.match(source, /if \\[\\[ "\\$scope" == "guest-only" \\]\\]; then/);
   assert.match(source, /node scripts\/run-native-guest\.mjs/);
   assert.match(source, /LOCAL_NATIVE_GUEST_SMOKE_RESULT passed=true/);
   assert.match(source, /guest_only_no_sealed_actor_validation/);
