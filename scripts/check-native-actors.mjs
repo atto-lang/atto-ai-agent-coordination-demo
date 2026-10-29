@@ -2,6 +2,7 @@
 // Compile-only gate for the eight native .ores actors plus both actor-mail fixtures.
 // This executes the Java OresMain --check compiler, NOT guest actor behavior.
 import { execFileSync, spawnSync } from 'node:child_process';
+import { sha256 } from './native-evidence.mjs';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,9 +32,10 @@ const cpFile = join(root, 'target', 'runtime-classpath.txt');
 if (!existsSync(classes) || !existsSync(cpFile))
   fail('missing built Java classes or runtime-classpath.txt');
 const options = { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 };
-let head, dirty;
+let head, tree, dirty;
 try {
   head = execFileSync('git', ['-C',root,'rev-parse','HEAD'], options).trim();
+  tree = execFileSync('git', ['-C',root,'rev-parse','HEAD^{tree}'],options).trim();
   dirty = execFileSync('git', ['-C',root,'status','--porcelain','--untracked-files=no'],options).trim();
 } catch { fail('compiler source identity unavailable'); }
 if (head !== expected || dirty) fail('compiler SHA mismatch or dirty tracked source');
@@ -49,7 +51,7 @@ for (const file of files) {
     'dev.oreslang.launcher.OresMain','--check',source],
   { cwd: root, encoding: 'utf8', timeout: 30000, maxBuffer: 1024*1024, shell: false });
   const passed = !run.error && run.status === 0 && !run.signal;
-  outcomes.push({ file, passed, exit_code: run.status, signal: run.signal,
+  outcomes.push({ file, source_sha256: sha256(readFileSync(source)), passed, exit_code: run.status, signal: run.signal,
     stderr: (run.stderr || '').slice(-800) });
   if (!passed) break;
 }
@@ -67,7 +69,7 @@ if (positive_ok) {
   // does NOT satisfy a negative type checker test.
   const diagnostic = String(run.stderr || '') + '\n' + String(run.stdout || '');
   negative = {
-    file: path, exit_code: run.status, signal: run.signal,
+    file: path, source_sha256: sha256(readFileSync(source)), exit_code: run.status, signal: run.signal,
     expected_type_error: 'ActorRef.send mailbox value',
     passed: !run.error && !run.signal && run.status !== null &&
       run.status !== 0 && diagnostic.includes('ActorRef.send mailbox value'),
@@ -75,7 +77,7 @@ if (positive_ok) {
   };
 }
 const passed = positive_ok && Boolean(negative && negative.passed);
-console.log('NATIVE_CHECK_RESULT ' + JSON.stringify({compiler_source_head:head,
+console.log('NATIVE_CHECK_RESULT ' + JSON.stringify({compiler_source_head:head, compiler_source_tree:tree,
   scope:'OresMain --check; ten positive source checks and one negative mailbox typing check; NOT guest execution',
   checked:outcomes.length, required:files.length, negative, passed, outcomes}));
 if (!passed) fail('native compiler positive or negative check failed; see diagnostics',1);
