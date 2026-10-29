@@ -18,9 +18,11 @@ const read = (name) => readFileSync(new URL('../src/' + name + '.ores', import.m
 for (const [name, required] of Object.entries(actors)) {
   test(name + ' has a native isolated actor and its public contract', () => {
     const source = read(name);
-    assert.match(source, new RegExp('isoactor\\s+' + required[0] + '\\s*\\{'));
+    assert.match(source, new RegExp('define\\s+isolated\\s+actor\\s+' + required[0] + '\\s+as'));
     for (const member of required.slice(1))
-      assert.match(source, new RegExp('pub fnc\\s+' + member + '\\s*\\('));
+      assert.match(source, new RegExp('pub\\s+' + member + '\\s*\\('));
+    assert.doesNotMatch(source, /\bisoactor\b|\bpub\s+fnc\b/);
+    assert.match(source, /\bend\s*$/);
     assert.doesNotMatch(source, /\b(?:java\.|System\.|python3?|subprocess)\b/);
   });
 }
@@ -54,11 +56,11 @@ test('coordinator enforces admission and duplicate-settlement guard', () => {
 
 test('decision DAG accepts only previously declared nodes and terminals', () => {
   const source = read('decision_tree');
-  assert.match(source, /pub fnc add_terminal\s*\(/);
+  assert.match(source, /pub add_terminal\s*\(/);
   assert.match(source, /self\.terminal_ids\.add\(id\)/);
   assert.match(source, /if !true_known \|\| !false_known; then return false; fi/);
   assert.match(source, /self\.node_ids\.size \+ self\.terminal_ids\.size >= 256/);
-  assert.match(source, /pub fnc is_terminal\s*\(/);
+  assert.match(source, /pub is_terminal\s*\(/);
   assert.match(source, /required_revision != self\.revision/);
   assert.doesNotMatch(source, /eval\s*\(|Function\s*\(/);
 });

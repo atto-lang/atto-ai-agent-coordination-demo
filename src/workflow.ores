@@ -2,13 +2,13 @@
 // The caller must persist transitions before externally observable side effects.
 // Stage values: 0 idle; 1 planned; 2 approved; 3 running; 4 completed;
 // 5 cancelled. Terminal stages never restart under the same identity.
-isoactor AgentWorkflowActor {
+define isolated actor AgentWorkflowActor as
   let String workflow_id = "";
   let String revision = "";
   let int phase = 0;
   let int transition_number = 0;
 
-  pub fnc start(String id, String exact_revision): bool {
+  pub start(String id, String exact_revision): bool {
     if self.phase != 0 || id == "" || exact_revision == ""; then
       return false;
     fi
@@ -19,7 +19,7 @@ isoactor AgentWorkflowActor {
     return true;
   }
 
-  pub fnc advance(String id, String exact_revision,
+  pub advance(String id, String exact_revision,
                   int expected_transition, int next_phase): bool {
     if id != self.workflow_id || exact_revision != self.revision ||
        expected_transition != self.transition_number; then
@@ -34,7 +34,7 @@ isoactor AgentWorkflowActor {
     return true;
   }
 
-  pub fnc cancel(String id, int expected_transition): bool {
+  pub cancel(String id, int expected_transition): bool {
     if id != self.workflow_id || expected_transition != self.transition_number ||
        self.phase < 1 || self.phase >= 4; then return false; fi
     self.phase = 5;
@@ -42,6 +42,6 @@ isoactor AgentWorkflowActor {
     return true;
   }
 
-  pub fnc stage(): int { return self.phase; }
-  pub fnc revision_number(): int { return self.transition_number; }
-}
+  pub stage(): int { return self.phase; }
+  pub revision_number(): int { return self.transition_number; }
+end

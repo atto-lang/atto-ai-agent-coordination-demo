@@ -1,12 +1,12 @@
 // One in-memory head pointer per repository + branch, with optimistic CAS.
 // This protects against stale HEAD reads, not against stale historical facts.
-isoactor MemoryInvalidationActor {
+define isolated actor MemoryInvalidationActor as
   let Array<String> repositories = new Array<String>();
   let Array<String> branches = new Array<String>();
   let Array<String> revisions = new Array<String>();
   let Array<int> generations = new Array<int>();
 
-  pub fnc register(String repo, String branch,
+  pub register(String repo, String branch,
                    String revision): Result<int, String> {
     if repo == "" || branch == "" || revision == ""; then
       return Err("invalid scope");
@@ -26,7 +26,7 @@ isoactor MemoryInvalidationActor {
     return Ok(1);
   }
 
-  pub fnc advance(String repo, String branch, String expected_revision,
+  pub advance(String repo, String branch, String expected_revision,
                   String new_revision, int expected_generation): Result<int, String> {
     if new_revision == "" || expected_revision == new_revision; then
       return Err("invalid head transition");
@@ -48,7 +48,7 @@ isoactor MemoryInvalidationActor {
     return Err("unknown scope");
   }
 
-  pub fnc is_current(String repo, String branch,
+  pub is_current(String repo, String branch,
                      String revision, int generation): bool {
     let int i = 0;
     for (const existing of self.repositories) {
@@ -61,5 +61,5 @@ isoactor MemoryInvalidationActor {
     return false;
   }
 
-  pub fnc scope_count(): int { return self.repositories.size; }
-}
+  pub scope_count(): int { return self.repositories.size; }
+end

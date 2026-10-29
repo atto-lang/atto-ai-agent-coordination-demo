@@ -1,7 +1,7 @@
 // Fail-closed policy gate for one subject/commit at a time.
 // Proof of authentication, trusted CI, reviewer identity and GitHub policy
 // MUST be performed by an authorized caller, not inferred from booleans here.
-isoactor DecisionGateActor {
+define isolated actor DecisionGateActor as
   let String subject_id = "";
   let String exact_revision = "";
   let int epoch = 0;
@@ -10,7 +10,7 @@ isoactor DecisionGateActor {
   let bool admission_verified = false;
   let bool closed = true;
 
-  pub fnc begin(String subject, String revision): bool {
+  pub begin(String subject, String revision): bool {
     if subject == "" || revision == ""; then return false; fi
     if self.epoch >= 2147483646; then return false; fi
     self.subject_id = subject;
@@ -23,7 +23,7 @@ isoactor DecisionGateActor {
     return true;
   }
 
-  pub fnc record_executed_check(String revision, int epoch,
+  pub record_executed_check(String revision, int epoch,
                                 int executed_steps, bool passed,
                                 bool trusted_origin): bool {
     if self.closed || epoch != self.epoch ||
@@ -33,7 +33,7 @@ isoactor DecisionGateActor {
     return self.checks_passed;
   }
 
-  pub fnc record_review(String revision, int epoch,
+  pub record_review(String revision, int epoch,
                         bool independently_approved): bool {
     if self.closed || epoch != self.epoch ||
        revision != self.exact_revision; then return false; fi
@@ -41,13 +41,13 @@ isoactor DecisionGateActor {
     return true;
   }
 
-  pub fnc can_commit(String revision, int epoch): bool {
+  pub can_commit(String revision, int epoch): bool {
     return !self.closed && revision == self.exact_revision &&
       epoch == self.epoch && self.admission_verified &&
       self.checks_passed && self.independent_approval;
   }
 
-  pub fnc invalidate(): void {
+  pub invalidate(): void {
     self.closed = true;
     self.checks_passed = false;
     self.independent_approval = false;
@@ -55,5 +55,5 @@ isoactor DecisionGateActor {
     return;
   }
 
-  pub fnc current_epoch(): int { return self.epoch; }
-}
+  pub current_epoch(): int { return self.epoch; }
+end

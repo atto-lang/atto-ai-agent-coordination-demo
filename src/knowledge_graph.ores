@@ -1,7 +1,7 @@
 // A bounded, actor-owned directed knowledge-graph partition.
 // No graph node is a separate scheduled actor. Returned arrays are new copies.
 // Authoritative cross-shard consistency belongs to a higher-level coordinator.
-isoactor KnowledgeGraphActor {
+define isolated actor KnowledgeGraphActor as
   let Array<String> ids = new Array<String>();
   let Array<String> labels = new Array<String>();
   let Array<String> edge_from = new Array<String>();
@@ -9,7 +9,7 @@ isoactor KnowledgeGraphActor {
   let Array<String> edge_kind = new Array<String>();
   let int revision = 0;
 
-  pub fnc add_entity(String id, String label): bool {
+  pub add_entity(String id, String label): bool {
     if id == "" || self.ids.size >= 4096; then return false; fi
     for (const existing of self.ids) {
       if existing == id; then return false; fi
@@ -20,14 +20,14 @@ isoactor KnowledgeGraphActor {
     return true;
   }
 
-  pub fnc contains(String id): bool {
+  pub contains(String id): bool {
     for (const existing of self.ids) {
       if existing == id; then return true; fi
     }
     return false;
   }
 
-  pub fnc label_of(String id): Result<String, String> {
+  pub label_of(String id): Result<String, String> {
     let int i = 0;
     for (const existing of self.ids) {
       if existing == id; then return Ok(self.labels[i]); fi
@@ -36,7 +36,7 @@ isoactor KnowledgeGraphActor {
     return Err("unknown entity");
   }
 
-  pub fnc add_edge(String source, String target, String kind): bool {
+  pub add_edge(String source, String target, String kind): bool {
     if kind == "" || self.edge_from.size >= 16384; then return false; fi
     if !self.contains(source) || !self.contains(target); then return false; fi
     let int i = 0;
@@ -52,7 +52,7 @@ isoactor KnowledgeGraphActor {
     return true;
   }
 
-  pub fnc neighbors(String source, String kind): Array<String> {
+  pub neighbors(String source, String kind): Array<String> {
     let mut Array<String> result = new Array<String>();
     let int i = 0;
     for (const from of self.edge_from) {
@@ -64,7 +64,7 @@ isoactor KnowledgeGraphActor {
     return result;
   }
 
-  pub fnc entity_count(): int { return self.ids.size; }
-  pub fnc edge_count(): int { return self.edge_from.size; }
-  pub fnc current_revision(): int { return self.revision; }
-}
+  pub entity_count(): int { return self.ids.size; }
+  pub edge_count(): int { return self.edge_from.size; }
+  pub current_revision(): int { return self.revision; }
+end

@@ -2,7 +2,7 @@
 // Does not serialize actor state, persist blobs, or implement recovery.
 // A trusted storage adapter must durably write/checksum a snapshot BEFORE
 // recording this manifest and must verify the blob again during restoration.
-isoactor MemoryCheckpointManifestActor {
+define isolated actor MemoryCheckpointManifestActor as
   let String shard_id = "";
   let String revision = "";
   let String storage_ref = "";
@@ -10,7 +10,7 @@ isoactor MemoryCheckpointManifestActor {
   let int last_event_sequence = -1;
   let int manifest_generation = 0;
 
-  pub fnc record(String shard, String exact_revision,
+  pub record(String shard, String exact_revision,
                  String storage_location, String content_checksum,
                  int last_applied_event): bool {
     if shard == "" || exact_revision == "" ||
@@ -28,7 +28,7 @@ isoactor MemoryCheckpointManifestActor {
     return true;
   }
 
-  pub fnc locate(String shard, String exact_revision,
+  pub locate(String shard, String exact_revision,
                  int event_sequence,
                  String checksum_expected): Result<String, String> {
     if shard != self.shard_id || exact_revision != self.revision ||
@@ -40,6 +40,6 @@ isoactor MemoryCheckpointManifestActor {
     return Ok(self.storage_ref);
   }
 
-  pub fnc event_sequence(): int { return self.last_event_sequence; }
-  pub fnc generation(): int { return self.manifest_generation; }
-}
+  pub event_sequence(): int { return self.last_event_sequence; }
+  pub generation(): int { return self.manifest_generation; }
+end
