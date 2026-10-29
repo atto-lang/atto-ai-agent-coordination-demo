@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 const runner = new URL('../scripts/check-native-actors.mjs', import.meta.url);
 const source = readFileSync(runner, 'utf8');
 test('checks all actor sources, both guests and negative type fixture', () => {
-  for (const fragment of ["'src': 8", "'src/memory': 9", "'src/runtime': 5", "'tests/guest/agent_pipeline.ores'", "'tests/guest/direct_agent_hop.ores'", "'tests/guest/step_agent_flow.ores'"]) assert.ok(source.includes(fragment), fragment);
+  for (const fragment of ["'src': 8", "'src/memory': 9", "'src/runtime': 6", "'tests/guest/agent_pipeline.ores'", "'tests/guest/direct_agent_hop.ores'", "'tests/guest/step_agent_flow.ores'"]) assert.ok(source.includes(fragment), fragment);
   assert.match(source, /readdirSync/);
   assert.match(source, /source_sha256/);
   assert.match(source, /manifest:files/);
