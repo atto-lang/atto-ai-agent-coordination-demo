@@ -35,75 +35,75 @@ for (const [file, actor, methods] of modules) {
 }
 test('ingestion is bounded, idempotent and acknowledges once', () => {
   mustContain('memory_ingestion', [
-    'self.event_ids.size >= 512',
+    's.event_ids.size >= 512',
     'if existing == event_id;',
-    'self.acknowledged[index]',
-    'self.digests[index] != digest'
+    's.acknowledged[index]',
+    's.digests[index] != digest'
   ]);
 });
 test('extraction never promotes a claim to verified status', () => {
   mustContain('memory_extraction', [
-    'self.candidate_ids.size >= 1024',
-    'self.states[i] != 0',
-    'self.states[i] = 1',
-    'self.states[i] = 2'
+    's.candidate_ids.size >= 1024',
+    's.states[i] != 0',
+    's.states[i] = 1',
+    's.states[i] = 2'
   ]);
 });
 test('verification resolves a candidate only once and keeps superseded facts', () => {
   mustContain('memory_verification', [
-    'self.memory_ids.size >= 2048',
-    'self.states[i] != 0',
-    'self.states[a] != 1 || self.states[b] != 1',
-    'self.states[a] = 3',
-    'self.states[i] != 1'
+    's.memory_ids.size >= 2048',
+    's.states[i] != 0',
+    's.states[a] != 1 || s.states[b] != 1',
+    's.states[a] = 3',
+    's.states[i] != 1'
   ]);
 });
 test('head invalidation is compare-and-swap, revision and epoch pinned', () => {
   mustContain('memory_invalidation', [
-    'self.repositories.size >= 128',
-    'self.revisions[i] != expected_revision',
-    'self.generations[i] != expected_generation',
-    'self.revisions[i] == revision',
-    'self.generations[i] == generation'
+    's.repositories.size >= 128',
+    's.revisions[i] != expected_revision',
+    's.generations[i] != expected_generation',
+    's.revisions[i] == revision',
+    's.generations[i] == generation'
   ]);
 });
 test('index and recall are scoped and capped', () => {
   mustContain('memory_index', [
-    'self.memory_ids.size >= 4096',
-    'self.revisions[i] == revision',
+    's.memory_ids.size >= 4096',
+    's.revisions[i] == revision',
     'limit < 1 || limit > 32'
   ]);
   mustContain('memory_retrieval', [
-    'self.ids.size >= 1024',
-    'self.active[i] = false',
-    'self.revisions[i] == revision',
+    's.ids.size >= 1024',
+    's.active[i] = false',
+    's.revisions[i] == revision',
     'limit < 1 || limit > 16',
-    'self.evidence_refs[i] != evidence_ref'
+    's.evidence_refs[i] != evidence_ref'
   ]);
 });
 test('context packaging enforces fixed token estimate and seals output', () => {
   mustContain('context_assembly', [
     'token_budget > 16384',
-    'self.memory_ids.size >= 24',
-    'estimated_tokens > self.remaining',
-    'self.remaining = self.remaining - estimated_tokens',
-    'self.sealed = true',
-    'if !self.sealed'
+    's.memory_ids.size >= 24',
+    'estimated_tokens > s.remaining',
+    's.remaining = s.remaining - estimated_tokens',
+    's.sealed = true',
+    'if !s.sealed'
   ]);
 });
 test('consolidation prevents direct alias cycles/chains', () => {
   mustContain('memory_consolidation', [
     'alias_id == canonical_id',
-    'self.canonicals[i] == alias_id',
+    's.canonicals[i] == alias_id',
     'existing == canonical_id',
-    'self.aliases.size >= 512'
+    's.aliases.size >= 512'
   ]);
 });
 test('checkpoint manifest records monotonic external storage pointers only', () => {
   mustContain('memory_checkpoint_manifest', [
-    'last_applied_event <= self.last_event_sequence',
-    'self.manifest_generation >= 2147483646',
-    'checksum_expected != self.checksum',
-    'event_sequence != self.last_event_sequence'
+    'last_applied_event <= s.last_event_sequence',
+    's.manifest_generation >= 2147483646',
+    'checksum_expected != s.checksum',
+    'event_sequence != s.last_event_sequence'
   ]);
 });

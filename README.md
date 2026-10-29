@@ -138,6 +138,25 @@ With an independently authorized, clean and built Java/Graal compiler checkout, 
 
 The combined gate now verifies a complete source-hash-identified compiler manifest, including the targeted negative mailbox type check, **and both** executed guest receipts. It fails closed on truncated, forged, stale or missing reports. The validator's regression tests are in `tests/native-evidence.test.mjs`, and alternate-runner authorization constraints in [CI evidence audit](docs/CI_NATIVE_EVIDENCE_AUDIT.md). Passing these **Node receipt tests** does not establish successful native compilation or crash recovery.
 
+## Sealed actor state and critical mutation loans
+
+All **20 actor implementations** now declare exactly one guest-owned `state { ... }`
+schema. There are no persistent ordinary instance fields and no direct
+`self.<field>` reads/writes. Every synchronous actor method obtains a bounded
+exclusive `self.handle_state(critical |s| -> { ... })` loan; validation,
+deduplication, identity/version checks and mutations remain in **one** critical
+section. Returned values are independent copies where previously specified;
+none of the loan references are returned.
+
+This is currently a **source-contract migration** to the sealed-state design
+in the compiler repository's `ACTOR_FAMILIES_SEALED_STATE_V1.md`. It is **not**
+proof that Java/Graal, LLVM or another backend accepts the entire source
+syntax, executes the callback, enforces state borrowing, or supplies physical
+actor-owned arenas. The locked section is synchronous: it contains no
+`await`, network activity, actor sends, or tool/LLM calls. Do not hold an
+actor-state loan across a suspension or a remote effect. Native compiler
+positive and negative tests are mandatory before merging.
+
 ## Validation
 
 ```sh

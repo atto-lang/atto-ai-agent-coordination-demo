@@ -3,43 +3,59 @@
 // A trusted storage adapter must durably write/checksum a snapshot BEFORE
 // recording this manifest and must verify the blob again during restoration.
 define isolated actor MemoryCheckpointManifestActor as
-  let String shard_id = "";
-  let String revision = "";
-  let String storage_ref = "";
-  let String checksum = "";
-  let int last_event_sequence = -1;
-  let int manifest_generation = 0;
+  // All persistent actor-owned fields are in this one state schema.
+  state {
+    shard_id: String = "";
+    revision: String = "";
+    storage_ref: String = "";
+    checksum: String = "";
+    last_event_sequence: int = -1;
+    manifest_generation: int = 0;
+  }
+
 
   pub record(String shard, String exact_revision,
                  String storage_location, String content_checksum,
                  int last_applied_event): bool {
-    if shard == "" || exact_revision == "" ||
-       storage_location == "" || content_checksum == "" ||
-       last_applied_event < 0 || last_applied_event >= 2147483646 ||
-       self.manifest_generation >= 2147483646; then return false; fi
-    if self.shard_id != "" && shard != self.shard_id; then return false; fi
-    if last_applied_event <= self.last_event_sequence; then return false; fi
-    self.shard_id = shard;
-    self.revision = exact_revision;
-    self.storage_ref = storage_location;
-    self.checksum = content_checksum;
-    self.last_event_sequence = last_applied_event;
-    self.manifest_generation = self.manifest_generation + 1;
-    return true;
+    return self.handle_state(critical |s| -> {
+      if shard == "" || exact_revision == "" ||
+         storage_location == "" || content_checksum == "" ||
+         last_applied_event < 0 || last_applied_event >= 2147483646 ||
+         s.manifest_generation >= 2147483646; then return false; fi
+      if s.shard_id != "" && shard != s.shard_id; then return false; fi
+      if last_applied_event <= s.last_event_sequence; then return false; fi
+      s.shard_id = shard;
+      s.revision = exact_revision;
+      s.storage_ref = storage_location;
+      s.checksum = content_checksum;
+      s.last_event_sequence = last_applied_event;
+      s.manifest_generation = s.manifest_generation + 1;
+      return true;
+    });
   }
 
   pub locate(String shard, String exact_revision,
                  int event_sequence,
                  String checksum_expected): Result<String, String> {
-    if shard != self.shard_id || exact_revision != self.revision ||
-       checksum_expected != self.checksum ||
-       event_sequence != self.last_event_sequence ||
-       self.manifest_generation <= 0; then
-      return Err("checkpoint identity or checksum mismatch");
-    fi
-    return Ok(self.storage_ref);
+    return self.handle_state(critical |s| -> {
+      if shard != s.shard_id || exact_revision != s.revision ||
+         checksum_expected != s.checksum ||
+         event_sequence != s.last_event_sequence ||
+         s.manifest_generation <= 0; then
+        return Err("checkpoint identity or checksum mismatch");
+      fi
+      return Ok(s.storage_ref);
+    });
   }
 
-  pub event_sequence(): int { return self.last_event_sequence; }
-  pub generation(): int { return self.manifest_generation; }
+  pub event_sequence(): int {
+    return self.handle_state(critical |s| -> {
+      return s.last_event_sequence;
+    });
+  }
+  pub generation(): int {
+    return self.handle_state(critical |s| -> {
+      return s.manifest_generation;
+    });
+  }
 end

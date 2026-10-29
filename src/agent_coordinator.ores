@@ -2,53 +2,67 @@
 // This actor owns tickets; it does not pretend to provide network delivery.
 // A production dispatcher must bind task leases to authenticated workers.
 define isolated actor AgentCoordinatorActor as
-  let Array<String> task_keys = new Array<String>();
-  let Array<String> owners = new Array<String>();
-  let Array<int> states = new Array<int>();
-  let int next_ticket = 1;
-  let int active_count = 0;
+  // Sole guest-owned persistent state; no ordinary actor instance fields.
+  state {
+    task_keys: Array<String> = new Array<String>();
+    owners: Array<String> = new Array<String>();
+    states: Array<int> = new Array<int>();
+    next_ticket: int = 1;
+    active_count: int = 0;
+  }
+
 
   // State: 0 = queued; 1 = completed; 2 = cancelled.
   pub submit(String task_key, String owner): Result<int, String> {
-    if task_key == "" || owner == ""; then return Err("empty key/owner"); fi
-    if self.active_count >= 64 || self.task_keys.size >= 4096 ||
-       self.next_ticket >= 2147483646; then
-      return Err("admission capacity exceeded");
-    fi
-    let int i = 0;
-    for (const existing of self.task_keys) {
-      if existing == task_key; then return Err("duplicate task key"); fi
-      i = i + 1;
-    }
-    val int ticket = self.next_ticket;
-    self.next_ticket = self.next_ticket + 1;
-    self.task_keys.add(task_key);
-    self.owners.add(owner);
-    self.states.add(0);
-    self.active_count = self.active_count + 1;
-    return Ok(ticket);
+    return self.handle_state(critical |s| -> {
+      if task_key == "" || owner == ""; then return Err("empty key/owner"); fi
+      if s.active_count >= 64 || s.task_keys.size >= 4096 ||
+         s.next_ticket >= 2147483646; then
+        return Err("admission capacity exceeded");
+      fi
+      let int i = 0;
+      for (const existing of s.task_keys) {
+        if existing == task_key; then return Err("duplicate task key"); fi
+        i = i + 1;
+      }
+      val int ticket = s.next_ticket;
+      s.next_ticket = s.next_ticket + 1;
+      s.task_keys.add(task_key);
+      s.owners.add(owner);
+      s.states.add(0);
+      s.active_count = s.active_count + 1;
+      return Ok(ticket);
+    });
   }
 
   pub settle(int ticket, String owner, bool cancelled): bool {
-    if ticket <= 0 || ticket >= self.next_ticket; then return false; fi
-    val int i = ticket - 1;
-    if i >= self.states.size || self.owners[i] != owner ||
-       self.states[i] != 0; then return false; fi
-    if cancelled; then
-      self.states[i] = 2;
-    else
-      self.states[i] = 1;
-    fi
-    self.active_count = self.active_count - 1;
-    return true;
+    return self.handle_state(critical |s| -> {
+      if ticket <= 0 || ticket >= s.next_ticket; then return false; fi
+      val int i = ticket - 1;
+      if i >= s.states.size || s.owners[i] != owner ||
+         s.states[i] != 0; then return false; fi
+      if cancelled; then
+        s.states[i] = 2;
+      else
+        s.states[i] = 1;
+      fi
+      s.active_count = s.active_count - 1;
+      return true;
+    });
   }
 
   pub state_of(int ticket): Result<int, String> {
-    if ticket <= 0 || ticket >= self.next_ticket; then
-      return Err("unknown ticket");
-    fi
-    return Ok(self.states[ticket - 1]);
+    return self.handle_state(critical |s| -> {
+      if ticket <= 0 || ticket >= s.next_ticket; then
+        return Err("unknown ticket");
+      fi
+      return Ok(s.states[ticket - 1]);
+    });
   }
 
-  pub pending_count(): int { return self.active_count; }
+  pub pending_count(): int {
+    return self.handle_state(critical |s| -> {
+      return s.active_count;
+    });
+  }
 end

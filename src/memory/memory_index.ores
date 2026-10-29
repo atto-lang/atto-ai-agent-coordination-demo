@@ -1,49 +1,61 @@
 // Bounded exact-match subject index. No embeddings or graph search here.
 // Memory IDs must have been verified in the authoritative fact ledger first.
 define isolated actor MemoryIndexActor as
-  let Array<String> memory_ids = new Array<String>();
-  let Array<String> subjects = new Array<String>();
-  let Array<String> repositories = new Array<String>();
-  let Array<String> branches = new Array<String>();
-  let Array<String> revisions = new Array<String>();
+  // All persistent actor-owned fields are in this one state schema.
+  state {
+    memory_ids: Array<String> = new Array<String>();
+    subjects: Array<String> = new Array<String>();
+    repositories: Array<String> = new Array<String>();
+    branches: Array<String> = new Array<String>();
+    revisions: Array<String> = new Array<String>();
+  }
+
 
   pub link(String memory_id, String subject, String repo,
                String branch, String revision): bool {
-    if memory_id == "" || subject == "" || repo == "" || branch == "" ||
-       revision == "" || self.memory_ids.size >= 4096; then return false; fi
-    let int i = 0;
-    for (const existing of self.memory_ids) {
-      if existing == memory_id && self.subjects[i] == subject &&
-         self.repositories[i] == repo && self.branches[i] == branch &&
-         self.revisions[i] == revision; then return false; fi
-      i = i + 1;
-    }
-    self.memory_ids.add(memory_id);
-    self.subjects.add(subject);
-    self.repositories.add(repo);
-    self.branches.add(branch);
-    self.revisions.add(revision);
-    return true;
+    return self.handle_state(critical |s| -> {
+      if memory_id == "" || subject == "" || repo == "" || branch == "" ||
+         revision == "" || s.memory_ids.size >= 4096; then return false; fi
+      let int i = 0;
+      for (const existing of s.memory_ids) {
+        if existing == memory_id && s.subjects[i] == subject &&
+           s.repositories[i] == repo && s.branches[i] == branch &&
+           s.revisions[i] == revision; then return false; fi
+        i = i + 1;
+      }
+      s.memory_ids.add(memory_id);
+      s.subjects.add(subject);
+      s.repositories.add(repo);
+      s.branches.add(branch);
+      s.revisions.add(revision);
+      return true;
+    });
   }
 
   // Returned IDs are candidates. The retrieval actor MUST re-check live
   // verification/supersession and scope before using any result.
   pub find(String subject, String repo, String branch,
                String revision, int limit): Result<Array<String>, String> {
-    if subject == "" || repo == "" || branch == "" || revision == "" ||
-       limit < 1 || limit > 32; then return Err("invalid lookup"); fi
-    let mut Array<String> results = new Array<String>();
-    let int i = 0;
-    for (const existing of self.subjects) {
-      if existing == subject && self.repositories[i] == repo &&
-         self.branches[i] == branch && self.revisions[i] == revision &&
-         results.size < limit; then
-        results.add(self.memory_ids[i]);
-      fi
-      i = i + 1;
-    }
-    return Ok(results);
+    return self.handle_state(critical |s| -> {
+      if subject == "" || repo == "" || branch == "" || revision == "" ||
+         limit < 1 || limit > 32; then return Err("invalid lookup"); fi
+      let mut Array<String> results = new Array<String>();
+      let int i = 0;
+      for (const existing of s.subjects) {
+        if existing == subject && s.repositories[i] == repo &&
+           s.branches[i] == branch && s.revisions[i] == revision &&
+           results.size < limit; then
+          results.add(s.memory_ids[i]);
+        fi
+        i = i + 1;
+      }
+      return Ok(results);
+    });
   }
 
-  pub size(): int { return self.memory_ids.size; }
+  pub size(): int {
+    return self.handle_state(critical |s| -> {
+      return s.memory_ids.size;
+    });
+  }
 end
