@@ -49,8 +49,10 @@ demo checkout's exact Git HEAD. Set it with:
 export ORESLANG_DEMO_SHA="$(git rev-parse HEAD)"
 ```
 
-It invokes the compiler's real `--check` mode on all eight actor files and
-the pipeline, then executes the pipeline and requires exact stdout. A clean,
+It invokes the compiler's real `--check` mode on all eight actor files
+plus **two** guest fixtures, and also requires the Java type checker to reject
+an intentionally invalid `ActorMail<String>` send with a targeted diagnostic.
+The two executed guests must both match byte-exact output oracles. A clean,
 built compiler and dependencies remain prerequisites. See the acceptance doc
 for Maven build commands. The latest hosted CI job still has no executing
 steps, so this gate is **committed but not yet executed against Java**.
@@ -60,7 +62,7 @@ The runner rejects missing/mismatched source revisions, missing build artifacts,
 nonzero exits, timeouts and stdout drift. **Nothing in the existing Node.js
 model or source-contract tests establishes native Oreslang compilation.** The
 `executed` message is deliberately inert; it does not authorize or invoke tools.
-Direct actor-to-actor forwarding, durable recovery, sandboxing, JDK25 exact-head
+Full actor-to-actor forwarding, durable recovery, sandboxing, JDK25 exact-head
 evidence and five-backend parity remain unverified.
 
 ## Reference coordination, durability and interoperability
@@ -94,6 +96,19 @@ node scripts/start-agent-gateway.mjs
 Treat the token/revision above as demonstration placeholders; do not use
 the sample secret in a deployment. The gateway deliberately has no write,
 tool-execution or inference endpoint.
+
+## Direct worker-to-worker mailbox fixture (native verification pending)
+
+`tests/guest/direct_agent_hop.ores` sends an actual typed
+`ActorRef<DirectAnalysisAgent>` through a research worker's mailbox. The
+research worker sends its evidence **directly** to the analysis worker, using
+the transferred actor reference. Main still forwards the analysis result to
+the execution worker. This tests one direct hop, not the proposed
+`actorA pipe actorB` operator (currently unsupported for execution).
+
+The exact expected stdout is `evidence-ready|approved|executed`. The Java
+guest launcher has **not yet run** on the new fixture. Source-only checks do
+not establish mailbox correctness, physical isolation or end-to-end recovery.
 
 ## Validation
 
