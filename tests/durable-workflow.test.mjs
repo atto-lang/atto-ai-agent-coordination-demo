@@ -31,7 +31,7 @@ test('refuses unauthorized effects, stale writer, duplicate keys and stale commi
   first.intent('op-1', digest);
   assert.throws(() => first.intent('op-1', digest), /duplicate effect key/);
   assert.throws(() => first.finish(), /unresolved effect/);
-  assert.throws(() => first.cancel(), /pending effect/);
+  assert.throws(() => first.cancel(), /unresolved effect/);
 });
 
 test('unknown external effect fails closed, no blind replay', () => {
@@ -39,6 +39,7 @@ test('unknown external effect fails closed, no blind replay', () => {
   f.begin(); f.approve(); f.intent('effect', digest);
   const out = reconcile_pending(f, { lookup: () => ({ status: 'unknown' }) });
   assert.equal(out.intents.effect.outcome, 'uncertain');
+  assert.throws(() => f.cancel(), /unresolved effect/);
   assert.throws(() => f.finish(), /unresolved effect/);
   assert.throws(() => f.acknowledge('effect', 'receipt'), /bad receipt/);
   reconcile_pending(f, { lookup: () => ({ status: 'committed', receipt: 'verified-later' }) });
