@@ -23,7 +23,7 @@ if (head !== expected || dirty) fail('demo revision mismatch or dirty tracked so
 function requireEvidence(script, output) {
   const marker = script === 'check-native-actors.mjs'
     ? 'NATIVE_CHECK_RESULT ' : 'NATIVE_GUEST_RESULT ';
-  const matches = output.split('\\n').filter(line => line.startsWith(marker));
+  const matches = output.split('\n').filter(line => line.startsWith(marker));
   if (matches.length !== 1) fail('missing or ambiguous evidence marker: ' + script);
   let record;
   try { record = JSON.parse(matches[0].slice(marker.length)); }
