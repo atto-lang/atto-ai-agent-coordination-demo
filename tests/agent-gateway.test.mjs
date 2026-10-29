@@ -37,3 +37,42 @@ test('denies effect execution, tenant isolation violations and invalid input',()
  assert.equal((await post(url,request('knowledge.get_entity',{id:'a'.repeat(256)}))).status,422);
  assert.equal((await post(url,request('knowledge.get_entity',{id:'__proto__'}))).json.value,null);
 }));
+
+test('rejects unknown envelope keys, extra operation arguments and bad revisions',()=>on_server(async url=>{
+ assert.equal((await post(url,request('workflow.status',{id:'w1'},{surprise:'smuggled'}))).status,400);
+ assert.equal((await post(url,request('knowledge.get_entity',{id:'repo:ores',tool:'write'}))).status,422);
+ assert.equal((await post(url,request('workflow.status',{id:'w1'},{expected_revision:'not-a-sha'}))).status,400);
+ assert.equal((await post(url,request('workflow.status',null))).status,422);
+}));
+test('rejects unsupported content type and compressed content',()=>on_server(async url=>{
+ const invalid=await fetch(url,{method:'POST',headers:{authorization:'Bearer '+token,
+   'content-type':'text/plain'},body:JSON.stringify(request('workflow.status',{id:'w1'}))});
+ assert.equal(invalid.status,415);
+ const compressed=await fetch(url,{method:'POST',headers:{authorization:'Bearer '+token,
+   'content-type':'application/json','content-encoding':'gzip'},
+   body:JSON.stringify(request('workflow.status',{id:'w1'}))});
+ assert.equal(compressed.status,415);
+}));
+test('rejects oversized trusted graph output before disclosing value',async()=>{
+ const server=create_agent_gateway({token,graph:{revision:sha,
+   entities:{big:{id:'big',body:'x'.repeat(20000)}},edges:{}},decision,workflow});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try {
+   const url=`http://127.0.0.1:${server.address().port}/v1/request`;
+   const r=await post(url,request('knowledge.get_entity',{id:'big'}));
+   assert.equal(r.status,413);
+   assert.equal(r.json.error,'response too large');
+   assert.equal(JSON.stringify(r.json).includes('xxxxxxxxxxxxxxxx'),false);
+ } finally {await new Promise(resolve=>server.close(resolve));}
+});
+test('hides internal decision engine errors from network callers',async()=>{
+ const server=create_agent_gateway({token,graph,workflow,
+   decision:{next:()=>{throw Error('internal-credential-should-not-leak');}}});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try {
+   const url=`http://127.0.0.1:${server.address().port}/v1/request`;
+   const r=await post(url,request('decision.next',{node_id:'review',predicate:true}));
+   assert.equal(r.status,422);
+   assert.equal(JSON.stringify(r.json).includes('internal-credential'),false);
+ } finally {await new Promise(resolve=>server.close(resolve));}
+});
