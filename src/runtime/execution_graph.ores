@@ -1,7 +1,7 @@
 // Single-writer, bounded executable dependency graph.
 // Edges point to earlier-declared prerequisite nodes, forming a DAG.
 // State transitions represent plans; no tool or LLM is executed here.
-isoactor ExecutionGraphActor {
+define isolated actor ExecutionGraphActor as
   let Array<String> node_ids = new Array<String>();
   let Array<int> node_states = new Array<int>();
   let Array<String> dependents = new Array<String>();
@@ -10,7 +10,7 @@ isoactor ExecutionGraphActor {
   let bool sealed = false;
 
   // State: 0 pending, 1 running, 2 succeeded, 3 failed, 4 cancelled.
-  pub fnc add_node(String id): bool {
+  pub add_node(String id): bool {
     if self.sealed || id == "" || self.node_ids.size >= 128 ||
        self.revision >= 2147483646; then return false; fi
     for (const existing of self.node_ids) {
@@ -22,7 +22,7 @@ isoactor ExecutionGraphActor {
     return true;
   }
 
-  pub fnc depends_on(String node, String prerequisite): bool {
+  pub depends_on(String node, String prerequisite): bool {
     if self.sealed || node == prerequisite ||
        self.dependents.size >= 512 ||
        self.revision >= 2147483646; then return false; fi
@@ -50,7 +50,7 @@ isoactor ExecutionGraphActor {
     return true;
   }
 
-  pub fnc seal(int expected_revision): bool {
+  pub seal(int expected_revision): bool {
     if self.sealed || self.node_ids.size == 0 ||
        expected_revision != self.revision ||
        self.revision >= 2147483646; then return false; fi
@@ -61,7 +61,7 @@ isoactor ExecutionGraphActor {
 
   // This read is a candidate list only. A scheduler must re-check start()
   // and authenticate worker identity before dispatching any action.
-  pub fnc ready(int expected_revision): Result<Array<String>, String> {
+  pub ready(int expected_revision): Result<Array<String>, String> {
     if !self.sealed || expected_revision != self.revision; then
       return Err("stale execution graph");
     fi
@@ -76,7 +76,7 @@ isoactor ExecutionGraphActor {
     return Ok(result);
   }
 
-  fnc prerequisites_done(String node): bool {
+  prerequisites_done(String node): bool {
     let int i = 0;
     for (const dependent of self.dependents) {
       if dependent == node; then
@@ -94,7 +94,7 @@ isoactor ExecutionGraphActor {
     return true;
   }
 
-  pub fnc start(String node, int expected_revision): bool {
+  pub start(String node, int expected_revision): bool {
     if !self.sealed || expected_revision != self.revision ||
        self.revision >= 2147483646 ||
        !self.prerequisites_done(node); then return false; fi
@@ -110,7 +110,7 @@ isoactor ExecutionGraphActor {
     return false;
   }
 
-  pub fnc settle(String node, int expected_revision,
+  pub settle(String node, int expected_revision,
                  bool succeeded): bool {
     if !self.sealed || expected_revision != self.revision ||
        self.revision >= 2147483646; then return false; fi
@@ -132,7 +132,7 @@ isoactor ExecutionGraphActor {
 
   // Cancellation is possible only before a task is dispatched.
   // Running tasks require an external cancellation/compensation protocol.
-  pub fnc cancel_pending(String node, int expected_revision): bool {
+  pub cancel_pending(String node, int expected_revision): bool {
     if !self.sealed || expected_revision != self.revision ||
        self.revision >= 2147483646; then return false; fi
     let int i = 0;
@@ -147,5 +147,5 @@ isoactor ExecutionGraphActor {
     return false;
   }
 
-  pub fnc current_revision(): int { return self.revision; }
-}
+  pub current_revision(): int { return self.revision; }
+end

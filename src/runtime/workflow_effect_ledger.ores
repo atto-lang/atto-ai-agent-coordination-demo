@@ -1,7 +1,7 @@
 // In-memory protocol model for idempotent external effects.
 // This ledger is NOT a WAL or durable outbox. After dispatch, an unknown
 // outcome must be reconciled externally; never silently execute it again.
-isoactor WorkflowEffectLedgerActor {
+define isolated actor WorkflowEffectLedgerActor as
   let Array<String> effect_keys = new Array<String>();
   let Array<String> workflow_ids = new Array<String>();
   let Array<String> exact_revisions = new Array<String>();
@@ -12,7 +12,7 @@ isoactor WorkflowEffectLedgerActor {
 
   // State 0 prepared, 1 dispatched/unknown, 2 externally confirmed,
   // 3 cancelled before dispatch, 4 externally proved not applied.
-  pub fnc prepare(String workflow_id, String exact_revision,
+  pub prepare(String workflow_id, String exact_revision,
                   String effect_key, String correlation_id): bool {
     if workflow_id == "" || exact_revision == "" ||
        effect_key == "" || correlation_id == "" ||
@@ -33,7 +33,7 @@ isoactor WorkflowEffectLedgerActor {
 
   // The adapter must persist the prepared command and its idempotency key
   // before issuing the external side effect. Dispatch yields UNKNOWN.
-  pub fnc dispatch(String effect_key, String exact_revision,
+  pub dispatch(String effect_key, String exact_revision,
                    int expected_epoch): bool {
     if expected_epoch != self.transition_epoch ||
        self.transition_epoch >= 2147483646; then return false; fi
@@ -52,7 +52,7 @@ isoactor WorkflowEffectLedgerActor {
 
   // Called only after an independently authenticated tool receipt or
   // definitive reconciliation, never solely from a model assertion.
-  pub fnc reconcile(String effect_key, String exact_revision,
+  pub reconcile(String effect_key, String exact_revision,
                     int expected_epoch, String receipt,
                     bool applied): bool {
     if receipt == "" || expected_epoch != self.transition_epoch ||
@@ -76,7 +76,7 @@ isoactor WorkflowEffectLedgerActor {
   }
 
   // Never cancel an already-dispatched (uncertain) effect.
-  pub fnc cancel_prepared(String effect_key, String exact_revision,
+  pub cancel_prepared(String effect_key, String exact_revision,
                          int expected_epoch): bool {
     if expected_epoch != self.transition_epoch ||
        self.transition_epoch >= 2147483646; then return false; fi
@@ -93,7 +93,7 @@ isoactor WorkflowEffectLedgerActor {
     return false;
   }
 
-  pub fnc state_of(String effect_key, String exact_revision): Result<int, String> {
+  pub state_of(String effect_key, String exact_revision): Result<int, String> {
     let int i = 0;
     for (const existing of self.effect_keys) {
       if existing == effect_key; then
@@ -107,5 +107,5 @@ isoactor WorkflowEffectLedgerActor {
     return Err("unknown effect");
   }
 
-  pub fnc epoch(): int { return self.transition_epoch; }
-}
+  pub epoch(): int { return self.transition_epoch; }
+end

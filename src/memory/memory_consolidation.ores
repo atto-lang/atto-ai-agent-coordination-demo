@@ -1,14 +1,14 @@
 // Declarative one-hop deduplication map. No hidden summarization or LLM calls.
 // A verifier must approve canonical memory IDs before they are registered.
 // Reject chains and cycles: a canonical may never later become an alias.
-isoactor MemoryConsolidationActor {
+define isolated actor MemoryConsolidationActor as
   let Array<String> aliases = new Array<String>();
   let Array<String> canonicals = new Array<String>();
   let Array<String> repositories = new Array<String>();
   let Array<String> branches = new Array<String>();
   let Array<String> revisions = new Array<String>();
 
-  pub fnc link_duplicate(String alias_id, String canonical_id,
+  pub link_duplicate(String alias_id, String canonical_id,
                          String repo, String branch,
                          String revision): bool {
     if alias_id == "" || canonical_id == "" || alias_id == canonical_id ||
@@ -31,7 +31,7 @@ isoactor MemoryConsolidationActor {
     return true;
   }
 
-  pub fnc resolve(String id, String repo, String branch,
+  pub resolve(String id, String repo, String branch,
                   String revision): Result<String, String> {
     if id == "" || repo == "" || branch == "" || revision == ""; then
       return Err("invalid memory scope");
@@ -48,5 +48,5 @@ isoactor MemoryConsolidationActor {
     return Ok(id);
   }
 
-  pub fnc size(): int { return self.aliases.size; }
-}
+  pub size(): int { return self.aliases.size; }
+end

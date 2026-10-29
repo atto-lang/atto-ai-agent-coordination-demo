@@ -15,9 +15,9 @@ const read = name => readFileSync(new URL('../src/runtime/' + name + '.ores', im
 for (const [path, actor, methods] of actorInfo) {
   test(actor + ' is an isolated native userland declaration', () => {
     const src = read(path);
-    assert.match(src, new RegExp('^isoactor\\s+' + actor + '\\s*\\{', 'm'));
-    assert.equal((src.match(/^isoactor\s+/gm) || []).length, 1);
-    for (const method of methods) assert.ok(src.includes('pub fnc ' + method + '('), method);
+    assert.match(src, new RegExp('^define\\s+isolated\\s+actor\\s+' + actor + '\\s+as', 'm'));
+    assert.equal((src.match(/^define isolated actor /gm) || []).length, 1);
+    for (const method of methods) assert.ok(src.includes('pub ' + method + '('), method);
     assert.doesNotMatch(src, /\b(?:System\.|java\.|python3?|subprocess)\b/);
   });
 }

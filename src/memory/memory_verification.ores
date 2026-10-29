@@ -1,6 +1,6 @@
 // Candidate facts with explicit review states. Verification requires an
 // authenticated external verifier; passing a receipt string is NOT proof.
-isoactor MemoryVerificationActor {
+define isolated actor MemoryVerificationActor as
   let Array<String> memory_ids = new Array<String>();
   let Array<String> repositories = new Array<String>();
   let Array<String> branches = new Array<String>();
@@ -12,7 +12,7 @@ isoactor MemoryVerificationActor {
   let Array<int> states = new Array<int>();
 
   // State 0 pending, 1 verified, 2 rejected, 3 superseded.
-  pub fnc propose(String id, String repo, String branch,
+  pub propose(String id, String repo, String branch,
                   String subject, String revision,
                   String evidence_digest,
                   String content): Result<int, String> {
@@ -38,7 +38,7 @@ isoactor MemoryVerificationActor {
 
   // Called ONLY by a capability-authorized verifier after independently
   // validating source provenance and the exact Git revision.
-  pub fnc resolve(int ticket, String id, String revision,
+  pub resolve(int ticket, String id, String revision,
                   String evidence_digest, String receipt_id,
                   bool accepted): bool {
     if ticket <= 0 || ticket > self.memory_ids.size ||
@@ -58,7 +58,7 @@ isoactor MemoryVerificationActor {
 
   // Allow replacement only by another verified record with the same
   // repository/branch/subject. Never overwrite the older evidence.
-  pub fnc supersede(int old_ticket, int replacement_ticket): bool {
+  pub supersede(int old_ticket, int replacement_ticket): bool {
     if old_ticket <= 0 || replacement_ticket <= 0 ||
        old_ticket > self.memory_ids.size ||
        replacement_ticket > self.memory_ids.size ||
@@ -73,7 +73,7 @@ isoactor MemoryVerificationActor {
     return true;
   }
 
-  pub fnc verified_content(int ticket, String id, String revision,
+  pub verified_content(int ticket, String id, String revision,
                            String evidence_digest): Result<String, String> {
     if ticket <= 0 || ticket > self.memory_ids.size; then
       return Err("unknown memory ticket");
@@ -87,7 +87,7 @@ isoactor MemoryVerificationActor {
     return Ok(self.contents[i]);
   }
 
-  pub fnc state_of(int ticket, String id): Result<int, String> {
+  pub state_of(int ticket, String id): Result<int, String> {
     if ticket <= 0 || ticket > self.memory_ids.size; then
       return Err("unknown memory ticket");
     fi
@@ -97,5 +97,5 @@ isoactor MemoryVerificationActor {
     return Ok(self.states[ticket - 1]);
   }
 
-  pub fnc size(): int { return self.memory_ids.size; }
-}
+  pub size(): int { return self.memory_ids.size; }
+end

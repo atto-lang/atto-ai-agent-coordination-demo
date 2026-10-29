@@ -2,7 +2,7 @@
 // Targets must already exist (terminal or branch). Insertion order therefore
 // prevents cycles and dangling targets without requiring recursive traversal.
 // Model-provided predicates are evaluated outside the actor by a trusted caller.
-isoactor DecisionTreeActor {
+define isolated actor DecisionTreeActor as
   let Array<String> node_ids = new Array<String>();
   let Array<String> terminal_ids = new Array<String>();
   let Array<String> true_targets = new Array<String>();
@@ -10,7 +10,7 @@ isoactor DecisionTreeActor {
   let int revision = 0;
 
   // Define terminal nodes before branches that reference them.
-  pub fnc add_terminal(String id): bool {
+  pub add_terminal(String id): bool {
     if id == "" || self.node_ids.size + self.terminal_ids.size >= 256 ||
        self.revision >= 2147483646; then return false; fi
     for (const existing of self.terminal_ids) {
@@ -26,7 +26,7 @@ isoactor DecisionTreeActor {
 
   // Branches may point only to earlier inserted nodes. This forbids
   // forward references, self-edges and cycles by construction.
-  pub fnc add_branch(String id, String on_true, String on_false): bool {
+  pub add_branch(String id, String on_true, String on_false): bool {
     if id == "" || on_true == "" || on_false == "" ||
        self.node_ids.size + self.terminal_ids.size >= 256 ||
        self.revision >= 2147483646; then return false; fi
@@ -54,7 +54,7 @@ isoactor DecisionTreeActor {
     return true;
   }
 
-  pub fnc next(String id, bool predicate,
+  pub next(String id, bool predicate,
                int required_revision): Result<String, String> {
     if required_revision != self.revision; then
       return Err("decision graph changed");
@@ -70,7 +70,7 @@ isoactor DecisionTreeActor {
     return Err("not a branch");
   }
 
-  pub fnc is_terminal(String id, int required_revision): Result<bool, String> {
+  pub is_terminal(String id, int required_revision): Result<bool, String> {
     if required_revision != self.revision; then
       return Err("decision graph changed");
     fi
@@ -83,5 +83,5 @@ isoactor DecisionTreeActor {
     return Err("unknown decision node");
   }
 
-  pub fnc current_revision(): int { return self.revision; }
-}
+  pub current_revision(): int { return self.revision; }
+end

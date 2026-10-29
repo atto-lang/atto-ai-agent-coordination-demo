@@ -1,7 +1,7 @@
 // Explicit staging of model- or parser-extracted candidate claims.
 // Candidate text remains untrusted, even after local review acknowledgement.
 // Extraction itself is performed by an external bounded worker/adapter.
-isoactor MemoryExtractionActor {
+define isolated actor MemoryExtractionActor as
   let Array<String> candidate_ids = new Array<String>();
   let Array<String> event_ids = new Array<String>();
   let Array<String> repositories = new Array<String>();
@@ -14,7 +14,7 @@ isoactor MemoryExtractionActor {
 
   // kinds: 1 semantic, 2 episodic, 3 procedural, 4 evidence.
   // States: 0 candidate, 1 forwarded-for-verification, 2 discarded.
-  pub fnc stage(String id, String event_id, String repo,
+  pub stage(String id, String event_id, String repo,
                 String branch, String revision, String subject,
                 String excerpt, int kind): bool {
     if id == "" || event_id == "" || repo == "" || branch == "" ||
@@ -37,7 +37,7 @@ isoactor MemoryExtractionActor {
     return true;
   }
 
-  pub fnc finish(String id, String event_id,
+  pub finish(String id, String event_id,
                  bool forward): bool {
     let int i = 0;
     for (const existing of self.candidate_ids) {
@@ -58,7 +58,7 @@ isoactor MemoryExtractionActor {
   }
 
   // Forwarded != verified. The downstream verification actor owns promotion.
-  pub fnc forwarded_excerpt(String id, String event_id,
+  pub forwarded_excerpt(String id, String event_id,
                             String revision): Result<String, String> {
     let int i = 0;
     for (const existing of self.candidate_ids) {
@@ -74,5 +74,5 @@ isoactor MemoryExtractionActor {
     return Err("unknown candidate");
   }
 
-  pub fnc size(): int { return self.candidate_ids.size; }
-}
+  pub size(): int { return self.candidate_ids.size; }
+end
