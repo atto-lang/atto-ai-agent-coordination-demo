@@ -16,3 +16,19 @@ test('response contract separates value from error',()=>{
  assert.equal(response.oneOf.length,2);
  assert.equal(response.properties.schema_version.const,1);
 });
+
+test('schema pins Git SHA and denies argument smuggling by operation',()=>{
+ assert.deepEqual(request.properties.expected_revision,{$ref:'#/$defs/revision'});
+ assert.equal(request.$defs.revision.pattern,'^[a-f0-9]{40}$');
+ const rules=request.allOf;
+ assert.equal(rules.length,request.properties.operation.enum.length);
+ for(const rule of rules){
+   const operation=rule.if.properties.operation.const;
+   assert.ok(request.properties.operation.enum.includes(operation));
+   const args=rule.then.properties.args;
+   assert.equal(args.additionalProperties,false);
+   assert.deepEqual(args.required.sort(),Object.keys(args.properties).sort());
+ }
+ assert.deepEqual(rules.find(x=>x.if.properties.operation.const==='decision.next')
+    .then.properties.args.required.sort(),['node_id','predicate']);
+});
