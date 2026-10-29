@@ -71,3 +71,15 @@ for (const [file] of actorInfo) {
     assert.ok(result.writes > 0);
   });
 }
+
+test('graph start checks every dependency under the same critical state loan before dispatch', () => {
+  const src = read('execution_graph');
+  const start = src.slice(src.indexOf('  pub start('), src.indexOf('  pub settle('));
+  const settle = src.slice(src.indexOf('  pub settle('), src.indexOf('  pub cancel_pending('));
+  assert.match(start, /self\.handle_state\(critical \|s\| -> \{/);
+  assert.match(start, /if !dependencies_met; then return false; fi/);
+  assert.ok(start.indexOf('if !dependencies_met; then return false; fi') <
+    start.indexOf('s.node_states[i] = 1'), 'dependency gate must precede dispatch');
+  assert.doesNotMatch(settle, /dependencies_met/);
+  assert.match(settle, /s.node_states\[i\] = 2/);
+});
