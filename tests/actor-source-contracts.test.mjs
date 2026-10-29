@@ -30,27 +30,27 @@ for (const [name, required] of Object.entries(actors)) {
 test('decision gate requires nonzero executed steps and exact revision', () => {
   const source = read('decision_gate');
   assert.match(source, /executed_steps > 0/);
-  assert.match(source, /revision != self.exact_revision/);
-  assert.match(source, /self.independent_approval/);
-  assert.match(source, /self.admission_verified/);
+  assert.match(source, /revision != s\.exact_revision/);
+  assert.match(source, /s\.independent_approval/);
+  assert.match(source, /s\.admission_verified/);
 });
 test('cache is revision pinned and bounded', () => {
   const source = read('knowledge_cache');
-  assert.match(source, /revision != self.graph_revision/);
-  assert.match(source, /self.keys.size >= 1024/);
-  assert.match(source, /now >= self.expires_at\[i\]/);
+  assert.match(source, /revision != s\.graph_revision/);
+  assert.match(source, /s\.keys.size >= 1024/);
+  assert.match(source, /now >= s\.expires_at\[i\]/);
 });
 test('graph verifies endpoints and is bounded', () => {
   const source = read('knowledge_graph');
   assert.match(source, /if !source_known \|\| !target_known/);
-  assert.match(source, /self.ids.size >= 4096/);
-  assert.match(source, /self.edge_from.size >= 16384/);
+  assert.match(source, /s\.ids.size >= 4096/);
+  assert.match(source, /s\.edge_from.size >= 16384/);
 });
 test('coordinator enforces admission and duplicate-settlement guard', () => {
   const source = read('agent_coordinator');
-  assert.match(source, /self.active_count >= 64/);
-  assert.match(source, /self.task_keys.size >= 4096/);
-  assert.match(source, /self.states\[i\] != 0/);
+  assert.match(source, /s\.active_count >= 64/);
+  assert.match(source, /s\.task_keys.size >= 4096/);
+  assert.match(source, /s\.states\[i\] != 0/);
   assert.match(source, /duplicate task key/);
 });
 
