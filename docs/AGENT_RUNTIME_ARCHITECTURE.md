@@ -46,6 +46,12 @@ Do not hold actor state locks across network requests or model inference. Actor 
 
 A successful unit test of in-memory actors is **not** this proof. A checkpoint manifest containing only a storage pointer cannot recover actor state.
 
+## All-actor native compilation gate
+
+`scripts/check-native-actors.mjs` now discovers every `.ores` file in `src/`, `src/memory/` and `src/runtime/`, plus every guest fixture under `tests/guest/`. It rejects missing source directories or fewer than the 20 currently declared actors plus one guest fixture, and reports the SHA-256 identity for each file. The pinned Java `OresMain --check` is invoked for each source and must return zero; a failed check aborts the sequence.
+
+This is compile-only **when actually executed**, not an actor runtime, journal, source provenance attestation, or crash recovery verdict. The current execution environment has neither Maven nor an accessible private compiler checkout. CI runs with zero recorded steps also provide no test verdict.
+
 ## Cross-backend delivery order
 
 | Milestone | Components | Exit criterion |

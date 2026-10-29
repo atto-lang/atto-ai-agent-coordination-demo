@@ -4,9 +4,13 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 const runner = new URL('../scripts/check-native-actors.mjs', import.meta.url);
 const source = readFileSync(runner, 'utf8');
-test('checks eight Oreslang classes and actor pipeline via real compiler --check', () => {
-  assert.equal((source.match(/'src\/[a-z_]+\.ores'/g) || []).length, 8);
-  assert.match(source, /'tests\/guest\/agent_pipeline\.ores'/);
+test('checks all 20 Oreslang actors and guest fixtures via real compiler --check', () => {
+  for (const segment of ["'src': 8", "'src/memory': 9", "'src/runtime': 3", "'tests/guest': 1"]) {
+    assert.ok(source.includes(segment), segment);
+  }
+  assert.match(source, /readdirSync/);
+  assert.match(source, /files.length < 21/);
+  assert.match(source, /source_sha256/);
   assert.match(source, /'dev\.oreslang\.launcher\.OresMain','--check',source/);
   assert.match(source, /outcomes\.length === files\.length/);
 });

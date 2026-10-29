@@ -102,6 +102,10 @@ Treat the token/revision above as demonstration placeholders; do not use
 the sample secret in a deployment. The gateway deliberately has no write,
 tool-execution or inference endpoint.
 
+## Native compiler gate across all actors
+
+With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and three runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
+
 ## Validation
 
 ```sh
