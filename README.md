@@ -70,7 +70,7 @@ demo checkout's exact Git HEAD. Set it with:
 export ORESLANG_DEMO_SHA="$(git rev-parse HEAD)"
 ```
 
-It invokes the compiler's real `--check` mode on all 21 actor files
+It invokes the compiler's real `--check` mode on all 22 actor files
 plus **three** guest fixtures, and also requires the Java type checker to reject
 an intentionally invalid `ActorMail<String>` send with a targeted diagnostic.
 All three executed guests must match byte-exact output oracles. A clean,
@@ -156,9 +156,32 @@ checks do not establish that execution.
 
 See [Step Functions integration audit and acceptance gates](docs/STEP_FUNCTION_ALIGNMENT_20261029.md).
 
+## Workflow Supervisor and durable recovery reference (draft)
+
+A new `WorkflowSupervisorActor` models bounded child-step admission, exact
+tenant/run/revision/generation/epoch/CAS fencing, completion receipts and
+in-doubt outcomes. It is a **sealed in-memory Oreslang actor protocol**.
+It has no direct storage integration, authenticated tool dispatcher or
+supervisor restart implementation yet.
+
+The separate `reference/sqlite-supervisor.mjs` (experimental Node 22
+`node:sqlite`) persists prepared effect intents in a local SQLite WAL and
+enforces activation/version checks. Its five executed local tests include a
+real subprocess SIGKILL **after a simulated external effect commits and
+before local acknowledgment**; recovery queries an authoritative fixture
+receipt and does not resend the effect. This is **not** a live Oreslang
+test, a real third-party provider, a production authenticated lease or
+multi-host exactly-once guarantee. See
+[Durable supervisor implementation and recovery limitations](docs/DURABLE_WORKFLOW_SUPERVISOR.md).
+
+Full native acceptance now discovers **at least 22** actor sources (8 core,
+9 memory, 5 runtime), 3 guest programs, and 1 expected negative mailbox
+typecheck; the new supervisor is a compiler-check target, **not** a fourth
+executed supervisor guest.
+
 ## Native compiler gate across all actors
 
-With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and four runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
+With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and five runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
 
 ## Validation
 
