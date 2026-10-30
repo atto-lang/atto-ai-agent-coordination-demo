@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "kind": "ai-agent-coordination",
+  "status": "bootstrap",
+  "native_guest_present": false,
+  "compiler_execution_verified": false,
+  "exact_head_ci_verified": false,
+  "actor_coordination_verified": false,
+  "external_ai_provider_verified": false,
+  "first_executable_milestone": "native bounded actor work allocation with deterministic completion, cancellation and stale-message tests"
+}
