@@ -1,0 +1,40 @@
+// Two-stage deterministic actor coordination smoke; no model calls,
+// knowledge graph, persistent memory, or independent policy assurance.
+define actor PlanStep as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "task-001"; do
+      self.send("plan:task-001");
+    else
+      self.send("rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+define actor ReviewStep as
+  receive(ActorMail<String> mail): void {
+    if mail.value == "plan:task-001"; do
+      self.send("approved:task-001");
+    else
+      self.send("rejected");
+    fi
+    self.end();
+    return;
+  }
+end
+
+pub async routine main(): void {
+  val planner = await spawn PlanStep();
+  planner.send("task-001");
+  val planned = (await planner.outputs.next()).value.unwrap();
+  await planner.get_done();
+
+  val reviewer = await spawn ReviewStep();
+  reviewer.send(planned.value);
+  val reviewed = (await reviewer.outputs.next()).value.unwrap();
+  await reviewer.get_done();
+
+  stdio.stdout.write(reviewed.value);
+  return;
+}
