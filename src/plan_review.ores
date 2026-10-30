@@ -1,40 +1,115 @@
-// Two-stage deterministic actor coordination smoke; no model calls,
-// knowledge graph, persistent memory, or independent policy assurance.
+// Deterministic actor coordination fixture with explicit task versioning.
+// This demo has no external model calls, persistence, or shared mutable state.
 define actor PlanStep as
   receive(ActorMail<String> mail): void {
-    if mail.value == "task-001"; do
-      self.send("plan:task-001");
+    if mail.value == "task-001@v1"; do
+      self.send("plan:task-001@v1");
     else
-      self.send("rejected");
+      self.send("rejected:unknown-task");
     fi
     self.end();
     return;
   }
 end
 
-define actor ReviewStep as
+define actor DecisionGate as
+  let bool approved;
+  let bool cancelled;
+  let String approved_plan;
+
+  on_start(): void {
+    self.approved = false;
+    self.cancelled = false;
+    self.approved_plan = "";
+    return;
+  }
+
   receive(ActorMail<String> mail): void {
-    if mail.value == "plan:task-001"; do
-      self.send("approved:task-001");
+    if mail.value == "finish"; do
+      self.send("finished");
+      self.end();
+
+    elseif mail.value == "cancel:task-001@v1"; do
+      if self.approved; do
+        self.send("rejected:already-decided");
+      else
+        self.cancelled = true;
+        self.send("cancelled:task-001@v1");
+      fi
+
+    elseif mail.value == "plan:task-001@v0"; do
+      self.send("rejected:stale-version");
+
+    elseif mail.value == "plan:task-001@v1"; do
+      if self.cancelled; do
+        self.send("rejected:cancelled");
+      elseif self.approved; do
+        if mail.value == self.approved_plan; do
+          self.send("rejected:replay");
+        else
+          self.send("rejected:decision-closed");
+        fi
+      else
+        self.approved = true;
+        self.approved_plan = mail.value;
+        self.send("approved:task-001@v1");
+      fi
+
     else
-      self.send("rejected");
+      self.send("rejected:unknown-plan");
     fi
-    self.end();
     return;
   }
 end
 
 pub async routine main(): void {
   val planner = await spawn PlanStep();
-  planner.send("task-001");
+  planner.send("task-001@v1");
   val planned = (await planner.outputs.next()).value.unwrap();
   await planner.get_done();
 
-  val reviewer = await spawn ReviewStep();
-  reviewer.send(planned.value);
-  val reviewed = (await reviewer.outputs.next()).value.unwrap();
-  await reviewer.get_done();
+  // Positive decision followed by a replay of the same versioned plan.
+  val gate = await spawn DecisionGate();
+  gate.send(planned.value);
+  val approved = (await gate.outputs.next()).value.unwrap();
+  gate.send(planned.value);
+  val replay = (await gate.outputs.next()).value.unwrap();
+  gate.send("finish");
+  val finished = (await gate.outputs.next()).value.unwrap();
+  await gate.get_done();
 
-  stdio.stdout.write(reviewed.value);
+  // A stale decision must never be accepted as the current task version.
+  val stale_gate = await spawn DecisionGate();
+  stale_gate.send("plan:task-001@v0");
+  val stale = (await stale_gate.outputs.next()).value.unwrap();
+  stale_gate.send("finish");
+  val stale_finished = (await stale_gate.outputs.next()).value.unwrap();
+  await stale_gate.get_done();
+
+  // Cancellation before approval permanently closes this decision gate.
+  val cancelled_gate = await spawn DecisionGate();
+  cancelled_gate.send("cancel:task-001@v1");
+  val cancelled = (await cancelled_gate.outputs.next()).value.unwrap();
+  cancelled_gate.send("plan:task-001@v1");
+  val after_cancel = (await cancelled_gate.outputs.next()).value.unwrap();
+  cancelled_gate.send("finish");
+  val cancelled_finished = (await cancelled_gate.outputs.next()).value.unwrap();
+  await cancelled_gate.get_done();
+
+  stdio.stdout.write(approved.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(replay.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(finished.value);
+  stdio.stdout.write("||");
+  stdio.stdout.write(stale.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(stale_finished.value);
+  stdio.stdout.write("||");
+  stdio.stdout.write(cancelled.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(after_cancel.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(cancelled_finished.value);
   return;
 }
