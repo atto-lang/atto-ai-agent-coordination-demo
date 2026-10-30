@@ -74,6 +74,8 @@ pub async routine main(): void {
   val approved = (await gate.outputs.next()).value.unwrap();
   gate.send(planned.value);
   val replay = (await gate.outputs.next()).value.unwrap();
+  gate.send("cancel:task-001@v1");
+  val cancel_after_decision = (await gate.outputs.next()).value.unwrap();
   gate.send("finish");
   val finished = (await gate.outputs.next()).value.unwrap();
   await gate.get_done();
@@ -82,6 +84,8 @@ pub async routine main(): void {
   val stale_gate = await spawn DecisionGate();
   stale_gate.send("plan:task-001@v0");
   val stale = (await stale_gate.outputs.next()).value.unwrap();
+  stale_gate.send("plan:task-999@v1");
+  val unknown = (await stale_gate.outputs.next()).value.unwrap();
   stale_gate.send("finish");
   val stale_finished = (await stale_gate.outputs.next()).value.unwrap();
   await stale_gate.get_done();
@@ -100,9 +104,13 @@ pub async routine main(): void {
   stdio.stdout.write("|");
   stdio.stdout.write(replay.value);
   stdio.stdout.write("|");
+  stdio.stdout.write(cancel_after_decision.value);
+  stdio.stdout.write("|");
   stdio.stdout.write(finished.value);
   stdio.stdout.write("||");
   stdio.stdout.write(stale.value);
+  stdio.stdout.write("|");
+  stdio.stdout.write(unknown.value);
   stdio.stdout.write("|");
   stdio.stdout.write(stale_finished.value);
   stdio.stdout.write("||");
