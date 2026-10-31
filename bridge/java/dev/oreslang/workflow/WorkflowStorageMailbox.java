@@ -53,6 +53,9 @@ public final class WorkflowStorageMailbox implements AutoCloseable {
     private final ThreadPoolExecutor worker;
     private final Semaphore slots;
     private final AtomicBoolean closed = new AtomicBoolean();
+    // Only set after the JNI handle is actually closed. A timed-out close
+    // must remain retryable without reopening admission.
+    private boolean handleClosed;
 
     public WorkflowStorageMailbox(NativeWorkflowStore storage,
             Admission trustedAdmission, int maxOutstanding) {
@@ -174,9 +177,9 @@ public final class WorkflowStorageMailbox implements AutoCloseable {
         };
     }
 
-    @Override public void close() {
-        if (!closed.compareAndSet(false, true)) return;
-        worker.shutdown();
+    @Override public synchronized void close() {
+        if (closed.compareAndSet(false, true)) worker.shutdown();
+        if (handleClosed) return;
         boolean interrupted = false;
         try {
             while (true) {
@@ -188,5 +191,6 @@ public final class WorkflowStorageMailbox implements AutoCloseable {
             }
         } finally { if (interrupted) Thread.currentThread().interrupt(); }
         storage.close();
+        handleClosed = true;
     }
 }
