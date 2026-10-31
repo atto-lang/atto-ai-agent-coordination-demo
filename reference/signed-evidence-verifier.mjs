@@ -65,6 +65,9 @@ export function create_signed_evidence_verifier({ trustedReceipts, keys, issuer,
     return [id, key];
   }));
   const consumed = new Set();
+  // Reserve capacity before any asynchronous receipt fetch or durable claim.
+  // Otherwise concurrent signed receipts can bypass max_receipts.
+  let pending = 0;
 
   return async function verifyEvidence(request) {
     const scope = snapshot(request, ['tenant_id','task_id','exact_revision',
@@ -75,7 +78,9 @@ export function create_signed_evidence_verifier({ trustedReceipts, keys, issuer,
         typeof scope.evidence_ref !== 'string' || !REF.test(scope.evidence_ref) ||
         typeof scope.exact_revision !== 'string' || !SHA.test(scope.exact_revision) ||
         typeof scope.excerpt_sha256 !== 'string' || !DIGEST.test(scope.excerpt_sha256) ||
-        consumed.size >= max_receipts) return null;
+        consumed.size + pending >= max_receipts) return null;
+    pending++;
+    try {
     let envelope;
     try { envelope = await trustedReceipts(Object.freeze({ ...scope })); }
     catch { return null; }
@@ -107,5 +112,6 @@ export function create_signed_evidence_verifier({ trustedReceipts, keys, issuer,
       consumed.add(payload.receipt_id);
       return Object.freeze({ authorized: true, ...scope });
     } catch { return null; }
+    } finally { pending--; }
   };
 }
