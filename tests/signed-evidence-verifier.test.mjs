@@ -82,3 +82,43 @@ test('canonical byte encoding rejects noncanonical or extra fields', () => {
   assert.ok(Buffer.isBuffer(a));
   assert.equal(a.toString().includes('oreslang.deploy'),false);
 });
+
+test('concurrent distinct signed receipts cannot exceed max_receipts while a durable claim is pending', async () => {
+  const firstClaimStarted = Promise.withResolvers();
+  const allowFirstClaim = Promise.withResolvers();
+  let receipts = 0;
+  let claimAttempts = 0;
+  const verify = create_signed_evidence_verifier({
+    trustedReceipts: async () => envelope(payload({receipt_id:'concurrent-'+(++receipts)})),
+    keys:{'key-a':publicKey}, issuer, now:()=>nowTime, max_receipts:1,
+    claimReceipt: async () => {
+      claimAttempts++;
+      if (claimAttempts === 1) {
+        firstClaimStarted.resolve();
+        await allowFirstClaim.promise;
+      }
+      return true;
+    }, requireDurable:true
+  });
+  const first = verify(scope);
+  await firstClaimStarted.promise;
+  try {
+    assert.equal(await verify(scope), null, 'concurrent verifier must reject capacity overrun');
+  } finally { allowFirstClaim.resolve(); }
+  assert.deepEqual(await first, {authorized:true, ...scope});
+  assert.equal(claimAttempts, 1, 'rejected parallel request must never reach durable claim');
+  assert.equal(await verify(scope), null, 'consumed receipt capacity remains spent');
+});
+
+test('failed verification frees an in-flight reservation without consuming receipt capacity', async () => {
+  let attempts=0;
+  const verify = create_signed_evidence_verifier({
+    trustedReceipts: async () => ++attempts === 1
+      ? { ...envelope(), signature_base64url:'not_valid' }
+      : envelope(payload({receipt_id:'recovered-receipt'})),
+    keys:{'key-a':publicKey}, issuer, now:()=>nowTime, max_receipts:1
+  });
+  assert.equal(await verify(scope), null);
+  assert.deepEqual(await verify(scope), {authorized:true, ...scope});
+  assert.equal(await verify(scope), null);
+});
