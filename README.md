@@ -30,3 +30,14 @@ The backend-neutral scenarios are also recorded in `conformance/coordination_cas
 ## Scope limits
 
 This fixture intentionally does not call external models and does not claim persistence, a knowledge graph, policy isolation, or production authorization. Model/provider access should remain behind explicit permission boundaries and separate adapters.
+
+## Repository ownership and migration (2026-11-08)
+
+**AttoLang** is the current public language; this code is still maintained under `ores-truffle-oreslang/oreslang-ai-agent-coordination-via-actors-demo` in the original Oreslang organization. Preserve working `.ores` files, repo naming and package/CLI compatibility until an independently tested change migrates them.
+
+- **Owns:** actor-based multi-agent coordination examples, typed state and bounded test fixtures.
+- **Not this repository:** managed agent hosting, model billing or privileged production access.
+- **Code ownership:** [atto-lang](https://github.com/atto-lang) is the destination for language semantics, core/std, compilers, developer tools, libraries and demos. [atto-co](https://github.com/atto-co) independently owns managed infrastructure, tenancy, identity, billing and production deployments. A separate `atto-*` repo is not by itself a verified Git transfer or equivalent source tree.
+- **Proposed migration, not authorization:** existing repository into `atto-lang/oreslang-ai-agent-coordination-via-actors-demo` with original name, history and numeric GitHub ID; no first-wave direct move into `atto-co`. A later production product spinout requires its own approval.
+
+**Repository transfer playbook:** coordinate in [issue #26](https://github.com/ores-truffle-oreslang/.github/issues/26) and review [private migration draft #25](https://github.com/ores-truffle-oreslang/.github/pull/25). Capture stable numeric ID, exact head SHA/tree, PRs, releases, packages, GitHub Pages, dependencies, branch/ruleset protections, Actions runners, secrets, App/webhook grants and rollback plan. Require explicit source and target administrators plus independent security reviewer. Never export/mirror private sources as a shortcut. After an actual GitHub ownership transfer, verify unchanged ID/history/tree, re-bind security controls and run exact-head CI. A job with `steps=[]` or `steps=null` is `NOT_EXECUTED`, and host/reference results do not prove compiled AttoLang guest or production HTTP execution.
