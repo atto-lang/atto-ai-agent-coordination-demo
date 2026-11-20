@@ -1,0 +1,69 @@
+{
+  "schema": "oreslang.demo.actor_coordination.conformance.v1",
+  "task_id": "task-001",
+  "current_version": "v1",
+  "semantics": {
+    "task_identity": "task id and version travel together",
+    "replay": "a second identical approved plan is rejected",
+    "stale": "older task versions are rejected",
+    "cancellation": "cancellation before approval permanently closes that gate",
+    "post_decision_cancel": "cannot revoke an already-committed decision through the pre-decision cancel path",
+    "unknown": "unknown plans are rejected",
+    "storage": "all mutable decision state is actor-owned"
+  },
+  "scenarios": [
+    {
+      "id": "approve_then_replay_then_cancel",
+      "inputs": [
+        "plan:task-001@v1",
+        "plan:task-001@v1",
+        "cancel:task-001@v1",
+        "finish"
+      ],
+      "outputs": [
+        "approved:task-001@v1",
+        "rejected:replay",
+        "rejected:already-decided",
+        "finished"
+      ]
+    },
+    {
+      "id": "reject_stale_and_unknown",
+      "inputs": [
+        "plan:task-001@v0",
+        "plan:task-999@v1",
+        "finish"
+      ],
+      "outputs": [
+        "rejected:stale-version",
+        "rejected:unknown-plan",
+        "finished"
+      ]
+    },
+    {
+      "id": "cancel_before_decision",
+      "inputs": [
+        "cancel:task-001@v1",
+        "plan:task-001@v1",
+        "finish"
+      ],
+      "outputs": [
+        "cancelled:task-001@v1",
+        "rejected:cancelled",
+        "finished"
+      ]
+    }
+  ],
+  "backend_gate": {
+    "required": [
+      "java",
+      "llvm",
+      "wasm",
+      "net",
+      "forge"
+    ],
+    "exact_event_order": true,
+    "no_inferred_parity": true,
+    "zero_step_ci": "NOT_EXECUTED"
+  }
+}
