@@ -1,3 +1,23 @@
+## Host-owned Java workflow storage mailbox (draft)
+
+The `WorkflowStorageMailbox` host service now accepts immutable scalar
+requests from a future trusted Oreslang actor-message adapter, validates
+their scope through a host-supplied admission callback and performs storage
+I/O on one bounded host worker. Java guest code receives **no** JNI pointers,
+SQLite paths, direct storage handles or issuer keys from mailbox replies.
+
+The locally executed Java → mailbox → JNI → C++/SQLite proof passes
+**4/4 mailbox groups**, including a killed Java subprocess and recovery
+without redispatching its in-doubt effect. The inherited JNI bridge proof
+also passes **4/4**. Neither is an executed `.ores` guest or GraalVM Native
+Image proof; the Java compiler/runtime actor-service injection is still
+missing. The policy and HMAC test key are test-only.
+
+Run `bash scripts/check-workflow-mailbox.sh` on an authorized Linux host
+with a JDK, C++17 and SQLite development headers. Full native acceptance
+now also requires this host proof, separately from actual Oreslang compiler
+and guest tests. [Boundary and verification details](docs/TRUSTED_WORKFLOW_MAILBOX.md).
+
 # Oreslang AI agent coordination via actors
 
 A **userland, native Oreslang** experiment in long-lived isolated actors for AI agent coordination, graph state, cache reuse, decision branching, and fail-closed workflow admission.

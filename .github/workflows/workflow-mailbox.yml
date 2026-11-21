@@ -1,0 +1,37 @@
+name: Trusted Java workflow storage mailbox proof
+
+on:
+  push:
+    branches:
+      - feat/trusted-workflow-mailbox-v1
+  pull_request:
+    paths:
+      - 'bridge/java/dev/oreslang/workflow/**'
+      - 'bridge/jni/**'
+      - 'native/**'
+      - 'scripts/check-workflow-mailbox.sh'
+      - 'scripts/check-jni-workflow.sh'
+      - 'tests/java/dev/oreslang/workflow/**'
+      - '.github/workflows/workflow-mailbox.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-mailbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact candidate tree
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install JDK 21 host test environment
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install SQLite C development library
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config g++
+      - name: Compile and execute Java JNI mailbox crash proof
+        run: bash scripts/check-workflow-mailbox.sh
