@@ -1,0 +1,29 @@
+name: Java JNI workflow native storage proof
+
+on:
+  pull_request:
+    paths:
+      - 'bridge/**'
+      - 'native/**'
+      - 'tests/java/**'
+      - 'scripts/check-jni-workflow.sh'
+      - '.github/workflows/java-jni-workflow.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  java-jni-workflow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Install host JNI and SQLite prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openjdk-21-jdk-headless libsqlite3-dev g++ pkg-config
+      - name: Real Java to JNI to SQLite workflow recovery
+        run: bash scripts/check-jni-workflow.sh
