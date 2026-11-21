@@ -156,6 +156,24 @@ checks do not establish that execution.
 
 See [Step Functions integration audit and acceptance gates](docs/STEP_FUNCTION_ALIGNMENT_20261029.md).
 
+## Authenticated local workflow control (reference only)
+
+A further hardening step adds HMAC-SHA256, short-lived, action-scoped
+capabilities for the Node SQLite supervisor. `create_run`, `activate`,
+`prepare_effect`, `reconcile`, `finish` and `inspect` require
+a signed tenant/run/revision scope; activation must also match the current
+stored epoch. Existing DB symlinks and insecure permissions are rejected.
+
+**10/10 local Node 22 tests pass**, including a real two-process
+activation race (one winner, one fenced loser), and a subprocess
+`SIGKILL` after a simulated external effect commit. This remains a
+single-host, experimental **reference**; the signing issuer belongs in an
+independently authenticated control plane and receipt verification is
+not yet integrated with a real provider. Native Oreslang actor execution
+and durable restart remain unverified.
+
+See [Capability Fencing: security contract, evidence and limitations](docs/WORKFLOW_CAPABILITY_FENCING.md).
+
 ## Workflow Supervisor and durable recovery reference (draft)
 
 A new `WorkflowSupervisorActor` models bounded child-step admission, exact
