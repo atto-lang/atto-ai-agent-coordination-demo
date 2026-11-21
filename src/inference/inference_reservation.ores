@@ -1,0 +1,167 @@
+// Native Oreslang userland reservation ledger for ONE tenant/model/revision.
+// Motivated by continuous batching / KV-cache resource pressure (vLLM).
+// This reserves declared request units; it does NOT measure GPU KV usage,
+// tokenize text, issue GPU commands, authenticate tenants or serve models.
+// The trusted model adapter must validate token counts, caller capabilities,
+// model identity and the GPU/serving allocation at the actual dispatch point.
+// This state is in-memory; restart loses reservations. Unknown remote outcomes
+// MUST remain reserved until independently reconciled.
+define isolated actor InferenceReservationActor as
+  state {
+    tenant_id: String = "";
+    model_id: String = "";
+    source_revision: String = "";
+    phase: int = 0;
+    generation: int = 0;
+    max_concurrent: int = 0;
+    max_reserved_units: int = 0;
+    active_count: int = 0;
+    reserved_units: int = 0;
+    request_ids: Array<String> = new Array<String>();
+    request_units: Array<int> = new Array<int>();
+    request_states: Array<int> = new Array<int>();
+  }
+
+  // Phases: 0 unconfigured, 1 accepting, 2 draining.
+  // Units are a conservative *trusted adapter* capacity estimate, not
+  // necessarily tokens or GPU memory bytes. This actor cannot verify them.
+  pub configure(String tenant, String model, String exact_revision,
+                int concurrency_limit, int unit_capacity): bool
+                with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.phase != 0 || tenant == "" || model == "" ||
+         exact_revision == "" ||
+         concurrency_limit < 1 || concurrency_limit > 64 ||
+         unit_capacity < 1 || unit_capacity > 262144; then
+        return false;
+      fi
+      s.tenant_id = tenant;
+      s.model_id = model;
+      s.source_revision = exact_revision;
+      s.max_concurrent = concurrency_limit;
+      s.max_reserved_units = unit_capacity;
+      s.phase = 1;
+      s.generation = 1;
+      return true;
+    });
+  }
+
+  // Returns a 1-based reservation ticket; CAS prevents stale admission.
+  // Never dispatch based only on this return: verify capability and the
+  // actual serving engine's allocation atomically at the dispatch boundary.
+  pub reserve(String tenant, String model, String exact_revision,
+              String request_id, int expected_generation,
+              int requested_units): Result<int, String>
+              with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.phase != 1 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision ||
+         request_id == "" || expected_generation != s.generation ||
+         requested_units < 1 || requested_units > 65536 ||
+         s.active_count >= s.max_concurrent ||
+         requested_units > s.max_reserved_units - s.reserved_units ||
+         s.request_ids.size >= 4096 || s.generation >= 2147483646; then
+        return Err("inference admission rejected");
+      fi
+      for (const existing of s.request_ids) {
+        if existing == request_id; then
+          return Err("duplicate request");
+        fi
+      }
+      s.request_ids.add(request_id);
+      s.request_units.add(requested_units);
+      s.request_states.add(1);
+      s.active_count = s.active_count + 1;
+      s.reserved_units = s.reserved_units + requested_units;
+      s.generation = s.generation + 1;
+      return Ok(s.request_ids.size);
+    });
+  }
+
+  // Release ONLY after trusted backend evidence confirms completion,
+  // cancellation before dispatch, or an externally reconciled outcome.
+  // The actor does NOT verify the proof: only a privileged adapter may call.
+  pub release_verified(String tenant, String model, String exact_revision,
+                       String request_id, int ticket,
+                       int expected_generation): bool
+                       with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision ||
+         ticket < 1 || ticket > s.request_ids.size ||
+         expected_generation != s.generation ||
+         s.generation >= 2147483646; then return false; fi
+      val int index = ticket - 1;
+      if s.request_ids[index] != request_id ||
+         s.request_states[index] != 1; then return false; fi
+      s.request_states[index] = 2;
+      s.active_count = s.active_count - 1;
+      s.reserved_units = s.reserved_units - s.request_units[index];
+      s.generation = s.generation + 1;
+      return true;
+    });
+  }
+
+  // Stop new requests without dropping outstanding reservations.
+  // A draining actor is NOT safely reclaimed until active_count == 0
+  // and all uncertain remote outcomes have been reconciled.
+  pub stop_accepting(String tenant, String model,
+                     String exact_revision, int expected_generation): bool
+                     with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.phase != 1 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision ||
+         expected_generation != s.generation ||
+         s.generation >= 2147483646; then return false; fi
+      s.phase = 2;
+      s.generation = s.generation + 1;
+      return true;
+    });
+  }
+
+  // Read-only counters reveal model/tenant load: enforce scope even for
+  // observation methods. This is NOT a replacement for caller authentication.
+  pub current_generation(String tenant, String model,
+                         String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.generation);
+    });
+  }
+
+  pub in_flight(String tenant, String model,
+                String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.active_count);
+    });
+  }
+
+  pub reserved_capacity(String tenant, String model,
+                        String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.reserved_units);
+    });
+  }
+
+  pub current_phase(String tenant, String model,
+                    String exact_revision): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if s.phase == 0 || tenant != s.tenant_id ||
+         model != s.model_id || exact_revision != s.source_revision; then
+        return Err("foreign or unconfigured inference reservation");
+      fi
+      return Ok(s.phase);
+    });
+  }
+end

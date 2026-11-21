@@ -1,0 +1,55 @@
+# Oreslang LLM/AI research-to-code adoption ledger — 2026-10-29
+
+Scope: rolling recent five-year window (2021-10-29 to 2026-10-29), plus relevant earlier foundations. This is a **prioritized, non-exhaustive** adoption ledger, not a claim to have implemented or ranked every paper by citations. Citation counts have **not** been independently retrieved, so none are claimed. Keep the broader 2005-onward language research program in the existing weekly automation.
+
+## Architectural non-negotiables
+
+- **Oreslang implementation**: scheduling coordination, typed messages, memory, graph nodes, workflow safety, quotas and adaptation registry belong in native userland isolated actors. Native actor state stays sealed behind critical loans; snake_case APIs.
+- **Optional external accelerator adapters**: model engines (vLLM/SGLang), FlashAttention/FlashInfer kernels, LoRA training and tokenizers are distinct licensed, versioned backend dependencies. Do not pretend Oreslang implements them merely by adding a protocol wrapper. CPU and WebAssembly fallback paths need separate measurements.
+- **No model-controlled authority**: tool calls, signed evidence, independently approved CI, tokens and tenant permissions must be verified at a trusted dispatch boundary, not inferred from prose or opaque strings. Prompt/data delimiters are insufficient.
+- **No proof inflation**: source contracts, Node test oracles, exact native guest execution, authenticated end-to-end tool dispatch and five-backend parity are separate evidence levels. Current native compilation and production GPU execution: **NOT VERIFIED**.
+- Protect privacy: private Oreslang source never moves to another org to use its Actions minutes without **independent explicit source and destination authorization**. Runner budgets do not grant export permission.
+
+## Research-to-implementation decisions
+
+| Original research / year and link | Technique and evidence | Decision, concrete Oreslang location, what is missing |
+| --- | --- | --- |
+| Dao et al., *FlashAttention*, NeurIPS 2022: https://papers.neurips.cc/paper_files/paper/2022/hash/67d57c32e20fd0a7a302cb81d36e40d5-Abstract-Conference.html | IO-aware tiled exact attention; published performance/model experiments tied to specific hardware | **ADAPT via external inference backend**. Avoid copying GPU kernels into core actor scheduler. CPU/GPU device and precision reproducibility unknown. |
+| Kwon et al., *Efficient Memory Management for Large Language Model Serving with PagedAttention*, SOSP 2023: https://doi.org/10.1145/3600006.3613165 | Paged KV-cache and batching, empirical serving improvements | **ADAPT**. src/inference/inference_reservation.ores adds native userland in-memory bounded reservation accounting, NOT actual GPU memory measurement or vLLM dispatch. Backend adapter + external durable quota/fencing missing. |
+| Ye et al., *FlashInfer*, 2025 preprint: https://arxiv.org/abs/2501.01005 | JIT/custom attention serving kernels, empirical benchmark | **DEFER kernel implementation**, evaluate configured engine integration only after measured workload; hard RT claims disallowed. |
+| Xie et al., *SPECTRE*, 2026 preprint: https://arxiv.org/abs/2605.08151 | Multi-model speculative serving with remote drafter; experiments in SGLang | **DEFER**, only consider behind opt-in backend capability and comparative measured p95/cost, correctness, tenant interference. |
+| Hu et al., *LoRA*, ICLR 2022: https://www.microsoft.com/en-us/research/publication/lora-low-rank-adaptation-of-large-language-models/ | Low-rank adaptation on frozen base weights, empirical | **ADAPT later** as version-pinned model adapter metadata and tenant deployment lifecycle, not native training in Oreslang actor scheduler. |
+| Dettmers et al., *QLoRA*, NeurIPS 2023: https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract.html | Quantized low-rank finetuning; empirical, hardware-specific | **DEFER** until dataset governance, GPU budget and evaluation baselines exist. |
+| Rafailov et al., *Direct Preference Optimization*, NeurIPS 2023: https://papers.neurips.cc/paper_files/paper/2023/hash/a85b405ed65c6477a4fe8302b5e06ce7-Abstract-Conference.html | Preference-based model adaptation, empirical | **DEFER** until independently reviewed labeling, held-out evaluation, privacy and rollback exist; no optimizer code in actor runtime. |
+| Yao et al., *ReAct*, ICLR 2023: https://arxiv.org/abs/2210.03629 | Reason/act trajectories with external observations | **ADAPT typed actor workflow** using existing src/runtime/step_run.ores (draft PR #10) and execution_graph.ores (draft PR #3); prohibit granting tool authority from model messages. Native executor not yet verified. |
+| Khattab et al., *DSPy*, ICLR 2024: https://proceedings.iclr.cc/paper_files/paper/2024/hash/f1cf02ce09757f57c3b93c0db83181e0-Abstract-Conference.html | Declarative compositional pipelines optimized to task metrics | **ADAPT** prompt/model policy-as-data and isolated evaluation callback; reference/context-position-eval.mjs (draft PR #12) is an offline scorer, not DSPy optimization. No native optimizer yet. |
+| Edge et al., *From Local to Global GraphRAG*, 2024 preprint: https://www.microsoft.com/en-us/research/publication/from-local-to-global-a-graph-rag-approach-to-query-focused-summarization/ | Graph index/community summaries for global corpus questions, empirical | **ADAPT selectively** atop existing knowledge_graph.ores and src/memory actors, with scope-provenance, bounded traversal, invalidation and evidence citations; no embeddings/community summarizer shipped. Compare against exact-match baseline. |
+| Liao et al., *GraphRAG Best Practices*, 2026 proceedings: https://doi.org/10.3233/SSW260013 | Component-wise retriever/reranker/serialization comparisons, dataset dependent | **ADAPT evaluation**, benchmark independent choices for source-code domain before adopting deeper traversal or index. Never import external quality scores into Oreslang claims. |
+| Liu et al., *Lost in the Middle*, TACL 2024: https://aclanthology.org/2024.tacl-1.9/ | Context position sensitivity, empirical | **ADAPT** reference/context-position-eval.mjs (PR #12) with first/middle/last response+evidence scoring. Only simulated test model today. |
+| Debenedetti et al., *AgentDojo*, NeurIPS 2024: https://arxiv.org/abs/2406.13352 | Dynamic tool-injection evaluation | **ADOPT adversarial gates**: prompt-injection as data tests in PR #12; add end-to-end tool-dispatch spoof, replay, revocation and exfiltration tests; no real privileged tool executor authorized. |
+| Wang et al., *MCPTox*, AAAI 2026: https://doi.org/10.1609/aaai.v40i42.40895 | Realistic MCP tool poisoning benchmark, empirical | **ADOPT negative tests** at tool registry + evidence adapter boundaries after tool adapter exists; defend against poisoned tool descriptions and schema substitution. |
+| Wang et al., *MCP-Bench*, 2025 preprint: https://arxiv.org/abs/2508.20453 | Complex multi-tool evaluation workloads | **ADAPT** deterministic tool-choice, distractor and trajectory fixtures (no live third-party MCP servers or secrets in CI). |
+| Lewis et al., *Retrieval-Augmented Generation*, NeurIPS 2020: https://arxiv.org/abs/2005.11401 | Foundational retrieval/generation combination | **Background (outside recent-five-year window)**; source-aware scope and grounding remain relevant, but untrusted retrieval is not verification. |
+
+## Current repository mapping (state and dependencies)
+
+| Workstream | Current code evidence | Next falsifiable acceptance |
+| --- | --- | --- |
+| Agent graphs, DAG scheduling, step function | Draft PRs #1, #3, #10 and corresponding native \`.ores\` prototypes | Exact-head native compile+guest run, no dynamic graph cycle, retry/unknown receipt, CAS negative tests |
+| Retrieval/memory/GraphRAG | PR #2 native memory actors; PR #12 host reference context admission and position scorer | Enforced trusted tokenizer + authenticated evidence at the **actual native actor ingress**, retrieval ground-truth metrics and stale branch invalidation |
+| Inference serving | This draft's native src/inference/inference_reservation.ores | Compiled native concurrency/capacity/duplicate tests, protected model adapter, actual engine token/KV memory and p50/p95/p99 latency observations |
+| Tool safety and durability | Open issue #9; DecisionGateActor and effect ledgers accept caller claims | Independent revocable capabilities and authenticated exact-tree CI receipts; durable fenced outbox and restart/unknown effect tests; spoofing not replayable |
+| Model optimization and fine-tuning | No verified Oreslang adapter registry or dataset governance in this repo | Baseline first: regression corpus, privacy review, accuracy and cost; then explicit operator-selected vLLM/LoRA/DPO experiments |
+| Backend parity | Java/Graal, LLVM, .NET, Wasm and Forge remain unverified for these guest actors | Each compiler pinned by SHA; effect/borrow/actor state negative tests and actual fixture traces per backend |
+
+## Near-term acceptance and metrics
+
+1. **P0 — security/runner**: resolve issues #4 (zero-step Actions), #7 (native state compiler), #9 (authority, quotas and durable effects). Never call zero-step job failures code regressions. Release blocked until nonzero-step exact-head results, independent review, authenticated dispatch, and never-replay uncertain effects.
+2. **P1 — native inference reservation**: compile InferenceReservationActor; run I01–I17 in tests/inference-guest-acceptance.md including stale-gen CAS, overcapacity, duplicate/replay, draining while in-flight, cancellation and unknown result. Measure real external engine CPU/GPU and tenant fairness separately.
+3. **P1 — memory/GraphRAG**: end-to-end verify input excerpt byte size, exact model tokenizer, correct repo/branch/revision and cryptographic evidence receipt; test citation recall accuracy, stale-read rejection, hallucination and adversarial prompt injection.
+4. **P2 — pipeline evaluation**: pin data/model/adapters; benchmark exact-match vs graph-augmented retrieval and at least first/middle/last placement, recording answer accuracy, citations, unsafe tool-action attempts and tokens/cost.
+5. **P3 — advanced serving/finetuning**: opt-in comparisons of attention kernels, speculative decoding, LoRA/QLoRA/DPO under hardware/version/licensing/reproducibility constraints. Require held-out quality and robust perf results; reject if benefits do not materialize.
+
+For all real inference runs, record throughput, time-to-first-token, decode speed, p50/p95/p99 request latency, peak GPU/host memory, job completion rate, fairness, failure/retry behavior, cost, energy where available, and exact environment. **No Oreslang performance numbers or benchmark improvements have been measured in this ledger.**
+
+Research changes are proposed as **reviewable draft code and gates**, not pre-authorized merge, source export, model training, production execution or release. Track reproducibility, counterevidence, retractions and new studies in the existing integrated Friday report.
