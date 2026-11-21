@@ -1,0 +1,77 @@
+// One in-memory head pointer per repository + branch, with optimistic CAS.
+// This protects against stale HEAD reads, not against stale historical facts.
+define isolated actor MemoryInvalidationActor as
+  state {
+    repositories: Array<String> = new Array<String>();
+    branches: Array<String> = new Array<String>();
+    revisions: Array<String> = new Array<String>();
+    generations: Array<int> = new Array<int>();
+  }
+
+  pub register(String repo, String branch,
+                   String revision): Result<int, String> with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if repo == "" || branch == "" || revision == ""; then
+        return Err("invalid scope");
+      fi
+      if s.repositories.size >= 128; then return Err("scope full"); fi
+      let int i = 0;
+      for (const existing of s.repositories) {
+        if existing == repo && s.branches[i] == branch; then
+          return Err("scope already registered");
+        fi
+        i = i + 1;
+      }
+      s.repositories.add(repo);
+      s.branches.add(branch);
+      s.revisions.add(revision);
+      s.generations.add(1);
+      return Ok(1);
+    });
+  }
+
+  pub advance(String repo, String branch, String expected_revision,
+                  String new_revision, int expected_generation): Result<int, String> with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if new_revision == "" || expected_revision == new_revision; then
+        return Err("invalid head transition");
+      fi
+      let int i = 0;
+      for (const existing of s.repositories) {
+        if existing == repo && s.branches[i] == branch; then
+          if s.revisions[i] != expected_revision ||
+             s.generations[i] != expected_generation ||
+             s.generations[i] >= 2147483646; then
+            return Err("stale head transition");
+          fi
+          s.revisions[i] = new_revision;
+          s.generations[i] = s.generations[i] + 1;
+          return Ok(s.generations[i]);
+        fi
+        i = i + 1;
+      }
+      return Err("unknown scope");
+    });
+  }
+
+  pub is_current(String repo, String branch,
+                     String revision, int generation): bool with state.read {
+    return self.handle_state(|s| -> {
+      let int i = 0;
+      for (const existing of s.repositories) {
+        if existing == repo && s.branches[i] == branch; then
+          return s.revisions[i] == revision &&
+            s.generations[i] == generation;
+        fi
+        i = i + 1;
+      }
+      return false;
+    });
+  }
+
+  pub scope_count(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.repositories.size;
+    });
+  }
+end

@@ -24,6 +24,3 @@ The actor instances isolate mutation and own their bounded arrays. Do not spawn 
 6. Physical actor-owned heaps/arenas across compiler backends.
 
 These are design targets, not features the demo already implements.
-
-## Sealed state and critical loans
-All eight actors store persistent fields only inside one `state { ... }` schema. Reader methods use `self.handle_state(|s| -> { ... })`; writers use `self.handle_state(critical |s| -> { ... })` under explicit `with state.read, state.write` effect bounds (or `with state.write` if write-only). Direct `self` field access is forbidden. Graph edge endpoint validation and mutation happen inside the same critical state callback; there is no nested actor-state loan. No state loan may escape, suspend, or be passed to external code. Array-valued state, compiled callback returns and runtime enforcement require actual native compiler and guest tests; source-only tests are not sufficient.

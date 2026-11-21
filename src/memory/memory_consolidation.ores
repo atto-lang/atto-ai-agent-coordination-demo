@@ -1,0 +1,62 @@
+// Declarative one-hop deduplication map. No hidden summarization or LLM calls.
+// A verifier must approve canonical memory IDs before they are registered.
+// Reject chains and cycles: a canonical may never later become an alias.
+define isolated actor MemoryConsolidationActor as
+  state {
+    aliases: Array<String> = new Array<String>();
+    canonicals: Array<String> = new Array<String>();
+    repositories: Array<String> = new Array<String>();
+    branches: Array<String> = new Array<String>();
+    revisions: Array<String> = new Array<String>();
+  }
+
+  pub link_duplicate(String alias_id, String canonical_id,
+                         String repo, String branch,
+                         String revision): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if alias_id == "" || canonical_id == "" || alias_id == canonical_id ||
+         repo == "" || branch == "" || revision == "" ||
+         s.aliases.size >= 512; then return false; fi
+      let int i = 0;
+      for (const existing of s.aliases) {
+        if s.repositories[i] == repo && s.branches[i] == branch &&
+           s.revisions[i] == revision; then
+          if existing == alias_id || existing == canonical_id ||
+             s.canonicals[i] == alias_id; then return false; fi
+        fi
+        i = i + 1;
+      }
+      s.aliases.add(alias_id);
+      s.canonicals.add(canonical_id);
+      s.repositories.add(repo);
+      s.branches.add(branch);
+      s.revisions.add(revision);
+      return true;
+    });
+  }
+
+  pub resolve(String id, String repo, String branch,
+                  String revision): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
+      if id == "" || repo == "" || branch == "" || revision == ""; then
+        return Err("invalid memory scope");
+      fi
+      let int i = 0;
+      for (const existing of s.aliases) {
+        if existing == id && s.repositories[i] == repo &&
+           s.branches[i] == branch &&
+           s.revisions[i] == revision; then
+          return Ok(s.canonicals[i]);
+        fi
+        i = i + 1;
+      }
+      return Ok(id);
+    });
+  }
+
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.aliases.size;
+    });
+  }
+end

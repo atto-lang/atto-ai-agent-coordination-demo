@@ -1,0 +1,124 @@
+// Candidate facts with explicit review states. Verification requires an
+// authenticated external verifier; passing a receipt string is NOT proof.
+define isolated actor MemoryVerificationActor as
+  state {
+    memory_ids: Array<String> = new Array<String>();
+    repositories: Array<String> = new Array<String>();
+    branches: Array<String> = new Array<String>();
+    subjects: Array<String> = new Array<String>();
+    revisions: Array<String> = new Array<String>();
+    evidence_digests: Array<String> = new Array<String>();
+    contents: Array<String> = new Array<String>();
+    verification_receipts: Array<String> = new Array<String>();
+    states: Array<int> = new Array<int>();
+  }
+
+  // State 0 pending, 1 verified, 2 rejected, 3 superseded.
+  pub propose(String id, String repo, String branch,
+                  String subject, String revision,
+                  String evidence_digest,
+                  String content): Result<int, String> with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if id == "" || repo == "" || branch == "" || subject == "" ||
+         revision == "" || evidence_digest == "" || content == ""; then
+        return Err("invalid candidate");
+      fi
+      if s.memory_ids.size >= 2048; then return Err("fact ledger full"); fi
+      for (const existing of s.memory_ids) {
+        if existing == id; then return Err("duplicate memory id"); fi
+      }
+      s.memory_ids.add(id);
+      s.repositories.add(repo);
+      s.branches.add(branch);
+      s.subjects.add(subject);
+      s.revisions.add(revision);
+      s.evidence_digests.add(evidence_digest);
+      s.contents.add(content);
+      s.verification_receipts.add("");
+      s.states.add(0);
+      return Ok(s.memory_ids.size);
+    });
+  }
+
+  // Called ONLY by a capability-authorized verifier after independently
+  // validating source provenance and the exact Git revision.
+  pub resolve(int ticket, String id, String revision,
+                  String evidence_digest, String receipt_id,
+                  bool accepted): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if ticket <= 0 || ticket > s.memory_ids.size ||
+         receipt_id == ""; then return false; fi
+      val int i = ticket - 1;
+      if s.memory_ids[i] != id || s.revisions[i] != revision ||
+         s.evidence_digests[i] != evidence_digest ||
+         s.states[i] != 0; then return false; fi
+      // One externally authenticated receipt cannot be replayed as proof of
+      // multiple facts. This is deduplication, NOT receipt authentication.
+      for (const previous_receipt of s.verification_receipts) {
+        if previous_receipt == receipt_id; then return false; fi
+      }
+      s.verification_receipts[i] = receipt_id;
+      if accepted; then
+        s.states[i] = 1;
+      else
+        s.states[i] = 2;
+      fi
+      return true;
+    });
+  }
+
+  // Supersession moves forward in monotonically allocated ticket order.
+  // The replacement must already be independently verified and match the
+  // repository/branch/subject. Git revision freshness needs external proof.
+  // Never overwrite or revive the earlier evidence.
+  pub supersede(int old_ticket, int replacement_ticket): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if old_ticket <= 0 || replacement_ticket <= 0 ||
+         old_ticket > s.memory_ids.size ||
+         replacement_ticket > s.memory_ids.size ||
+         replacement_ticket <= old_ticket; then return false; fi
+      val int a = old_ticket - 1;
+      val int b = replacement_ticket - 1;
+      if s.states[a] != 1 || s.states[b] != 1 ||
+         s.repositories[a] != s.repositories[b] ||
+         s.branches[a] != s.branches[b] ||
+         s.subjects[a] != s.subjects[b]; then return false; fi
+      s.states[a] = 3;
+      return true;
+    });
+  }
+
+  pub verified_content(int ticket, String id, String revision,
+                           String evidence_digest): Result<String, String> with state.read {
+    return self.handle_state(|s| -> {
+      if ticket <= 0 || ticket > s.memory_ids.size; then
+        return Err("unknown memory ticket");
+      fi
+      val int i = ticket - 1;
+      if s.memory_ids[i] != id || s.revisions[i] != revision ||
+         s.evidence_digests[i] != evidence_digest ||
+         s.states[i] != 1; then
+        return Err("not a current verified fact");
+      fi
+      return Ok(s.contents[i]);
+    });
+  }
+
+  pub state_of(int ticket, String id): Result<int, String> with state.read {
+    return self.handle_state(|s| -> {
+      if ticket <= 0 || ticket > s.memory_ids.size; then
+        return Err("unknown memory ticket");
+      fi
+      if s.memory_ids[ticket - 1] != id; then
+        return Err("memory identity mismatch");
+      fi
+      return Ok(s.states[ticket - 1]);
+    });
+  }
+
+  pub size(): int with state.read {
+    return self.handle_state(|s| -> {
+      return s.memory_ids.size;
+    });
+  }
+end
