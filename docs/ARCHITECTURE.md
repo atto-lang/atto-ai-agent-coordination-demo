@@ -24,3 +24,22 @@ The actor instances isolate mutation and own their bounded arrays. Do not spawn 
 6. Physical actor-owned heaps/arenas across compiler backends.
 
 These are design targets, not features the demo already implements.
+
+## Sealed actor state and critical mutation loans
+
+All **20 actor implementations** now declare exactly one guest-owned `state { ... }`
+schema. There are no persistent ordinary instance fields and no direct
+`self.<field>` reads/writes. Every synchronous actor method obtains a bounded
+exclusive `self.handle_state(critical |s| -> { ... })` loan; validation,
+deduplication, identity/version checks and mutations remain in **one** critical
+section. Returned values are independent copies where previously specified;
+none of the loan references are returned.
+
+This is currently a **source-contract migration** to the sealed-state design
+in the compiler repository's `ACTOR_FAMILIES_SEALED_STATE_V1.md`. It is **not**
+proof that Java/Graal, LLVM or another backend accepts the entire source
+syntax, executes the callback, enforces state borrowing, or supplies physical
+actor-owned arenas. The locked section is synchronous: it contains no
+`await`, network activity, actor sends, or tool/LLM calls. Do not hold an
+actor-state loan across a suspension or a remote effect. Native compiler
+positive and negative tests are mandatory before merging.
