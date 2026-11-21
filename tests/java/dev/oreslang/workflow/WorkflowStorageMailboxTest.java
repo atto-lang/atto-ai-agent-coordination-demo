@@ -182,9 +182,43 @@ public final class WorkflowStorageMailboxTest {
         check(Files.readString(remote).equals(original),"remote effect not repeated");
         tests++;
     }
+    private static void timedOutCloseCanBeRetried() throws Exception {
+        Path dir=Files.createTempDirectory("ores-mailbox-close-retry-"),remote=dir.resolve("provider.txt");
+        NativeWorkflowStore store=NativeWorkflowStore.open(dir,
+                new NativeWorkflowBridgeTest.HostPolicy(remote));
+        store.createRun(TENANT,RUN,SHA);
+        CountDownLatch started=new CountDownLatch(1),release=new CountDownLatch(1);
+        WorkflowStorageMailbox service=new WorkflowStorageMailbox(store,(m,now)->{
+            started.countDown();
+            try {return release.await(12,TimeUnit.SECONDS);}
+            catch(InterruptedException e){Thread.currentThread().interrupt();return false;}
+        },1);
+        try {
+            var task=service.submit(req("slow-close",Action.INSPECT,0,0));
+            check(started.await(3,TimeUnit.SECONDS),"host worker entered slow admission");
+            boolean retained=false;
+            try {service.close();}
+            catch(IllegalStateException e) {
+                retained=e.getMessage().contains("worker is still busy");
+            }
+            check(retained,"first close times out without closing active JNI handle");
+            check(send(service,req("after-close",Action.INSPECT,0,0)).status()==Status.CLOSED,
+                    "timed-out close must never reopen guest admission");
+            release.countDown();
+            check(task.get(5,TimeUnit.SECONDS).succeeded(),"original host operation completes");
+            service.close();
+            boolean handleReleased=false;
+            try {store.inspect(TENANT,RUN,SHA);}
+            catch(IllegalStateException e) {
+                handleReleased=e.getMessage().contains("already closed");
+            }
+            check(handleReleased,"retry must release JNI storage after worker termination");
+        } finally {release.countDown();service.close();}
+        tests++;
+    }
     public static void main(String[] args) throws Exception {
         if(args.length==3 && "child".equals(args[0])) {child(Path.of(args[1]),Path.of(args[2]));return;}
-        admissionAndRelease();noGuestAuthority();boundedHostWorker();killedProcessRecovery();
+        admissionAndRelease();noGuestAuthority();boundedHostWorker();killedProcessRecovery();timedOutCloseCanBeRetried();
         System.out.println("WORKFLOW_MAILBOX_RESULT passed="+tests+" host_only=true");
     }
 }
