@@ -15,7 +15,7 @@ const compiler = process.env.ORESLANG_COMPILER_SHA ?? '';
 const sha256 = path => createHash('sha256').update(readFileSync(join(demo,path))).digest('hex');
 const guests = ['agent_pipeline','direct_agent_hop','step_agent_flow'];
 const guestPaths = guests.map(name => 'tests/guest/' + name + '.ores');
-const actorDirs = [['src',8],['src/memory',9],['src/runtime',4]];
+const actorDirs = [['src',8],['src/memory',9],['src/runtime',5]];
 function fail(message) {
   console.error('NATIVE_ACCEPTANCE_UNVERIFIED ' + message);
   process.exit(2);

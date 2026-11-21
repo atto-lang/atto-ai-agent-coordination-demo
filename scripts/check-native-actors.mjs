@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const actorDirs = { 'src': 8, 'src/memory': 9, 'src/runtime': 4 };
+const actorDirs = { 'src': 8, 'src/memory': 9, 'src/runtime': 5 };
 const requiredGuestPaths = ['tests/guest/agent_pipeline.ores', 'tests/guest/direct_agent_hop.ores', 'tests/guest/step_agent_flow.ores'];
 const negativePath = 'tests/guest/negative/wrong_actor_mail_type.ores';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
