@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const actorDirs = { 'src': 8, 'src/memory': 9, 'src/runtime': 6 };
 const requiredGuestPaths = ['tests/guest/agent_pipeline.ores', 'tests/guest/direct_agent_hop.ores', 'tests/guest/step_agent_flow.ores'];
+const requiredStorageContractPaths = ['contracts/native/workflow_storage.ores'];
 const negativePath = 'tests/guest/negative/wrong_actor_mail_type.ores';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 function listActors(base, dir, minimum) {
@@ -50,7 +51,7 @@ const actorPaths = [];
 for (const [dir, minimum] of Object.entries(actorDirs))
   actorPaths.push(...listActors(base, dir, minimum));
 if (actorPaths.length < 23) fail('incomplete actor source manifest');
-const files = [...actorPaths, ...requiredGuestPaths].sort();
+const files = [...actorPaths, ...requiredGuestPaths, ...requiredStorageContractPaths].sort();
 if (new Set(files).size !== files.length) fail('duplicate native source path');
 const outcomes = [];
 for (const file of files) {

@@ -1,0 +1,29 @@
+name: Native SQLite workflow storage proof
+on:
+  push:
+    branches:
+      - feat/native-workflow-sqlite-adapter-v1
+  pull_request:
+    paths:
+      - 'native/workflow_sqlite.*'
+      - 'tests/native_sqlite_test.cpp'
+      - 'scripts/check-native-sqlite.sh'
+      - '.github/workflows/native-sqlite-storage.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-sqlite-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install SQLite development headers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends g++ pkg-config libsqlite3-dev
+      - name: Execute actual native SQLite recovery tests
+        run: bash scripts/check-native-sqlite.sh
