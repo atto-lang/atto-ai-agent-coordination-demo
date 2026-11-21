@@ -29,6 +29,11 @@ test('state admission guard rejects forbidden source mutations', () => {
   const original = read('agent_registry');
   const mutations = [
     ['raw field', original.replace('  state {', '  let int illicit = 0;\n  state {')],
+    ['extra val actor field', original.replace('  state {', '  val int illicit = 0;\n  state {')],
+    ['extra var actor field', original.replace('  state {', '  var int illicit = 0;\n  state {')],
+    ['extra const actor field', original.replace('  state {', '  const int illicit = 0;\n  state {')],
+    ['second isolated actor without state schema', original + '\ndefine isolated actor Shadow as\nend\n'],
+    ['second legacy actor without state schema', original + '\ndefine actor Shadow as\nend\n'],
     ['unmarked write', original.replace('self.handle_state(critical |s| -> {', 'self.handle_state(|s| -> {')],
     ['state array escape', original.replace('return s.revision;', 'return s.identities;')],
     ['wrapped state array escape', original.replace('return s.revision;', 'return Ok(s.identities);')],
