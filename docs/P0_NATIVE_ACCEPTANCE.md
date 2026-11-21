@@ -44,8 +44,8 @@ The runner requires: (1) exact 40-hex compiler source HEAD, (2) clean tracked co
 
 The Java reference launcher currently implements `--check` via
 `LinkedProgramRunner.validate`. The new fail-closed gate
-`scripts/check-native-actors.mjs` invokes it against **all eight** `src/*.ores`
-actors and **both** guest fixtures (10 positive inputs). It additionally
+`scripts/check-native-actors.mjs` invokes it against **all 20 current actor files** in `src/`, `src/memory/`, and
+`src/runtime/` plus **both** guest fixtures (22 positive inputs). It additionally
 runs `tests/guest/negative/wrong_actor_mail_type.ores` and requires a targeted
 `ActorRef.send mailbox value` type diagnostic; a nonzero parser failure alone
 does not count as success. The combined gate

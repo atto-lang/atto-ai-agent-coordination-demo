@@ -31,6 +31,10 @@ test('state admission guard rejects forbidden source mutations', () => {
     ['raw field', original.replace('  state {', '  let int illicit = 0;\n  state {')],
     ['unmarked write', original.replace('self.handle_state(critical |s| -> {', 'self.handle_state(|s| -> {')],
     ['state array escape', original.replace('return s.revision;', 'return s.identities;')],
+    ['wrapped state array escape', original.replace('return s.revision;', 'return Ok(s.identities);')],
+    ['parenthesized state array escape', original.replace('return s.revision;', 'return (s.identities);')],
+    ['state array alias', original.replace('return s.revision;', 'let copy = s.identities;\n      return copy;')],
+    ['state array call argument', original.replace('return s.revision;', 'return consume(s.identities);')],
     ['unknown state field', original.replace('s.revision = s.revision + 1;', 's.unknown = s.revision + 1;')],
     ['missing write effect', original.replace('with state.read, state.write', 'with state.read')],
     ['suspension inside loan', original.replace('s.identities.add(id);', 'await bad;\n      s.identities.add(id);')],
@@ -40,4 +44,11 @@ test('state admission guard rejects forbidden source mutations', () => {
     assert.notEqual(source, original, 'mutation must apply: ' + reason);
     assert.notDeepEqual(auditActorSource(source).problems, [], reason);
   }
+});
+
+test('replacing the actor-owned Array under an exclusive loan is not reference escape', () => {
+  const cache = readFileSync(new URL('../src/knowledge_cache.ores', import.meta.url), 'utf8');
+  const result = auditActorSource(cache);
+  assert.deepEqual(result.problems, [], JSON.stringify(result));
+  assert.match(cache, /s\.keys = new Array<String>\(\)/);
 });
