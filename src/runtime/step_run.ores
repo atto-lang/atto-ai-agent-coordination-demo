@@ -1,0 +1,207 @@
+// In-memory, one-owner execution record for ONE logical agent workflow step.
+// The step-function demo motivates strict phase ordering and bounded retries.
+// This does NOT spawn actors, call tools, authenticate callers, persist state
+// or implement a durable Workflow actor. A trusted dispatcher must verify
+// tenant/run capabilities and commit each transition to fenced storage.
+//
+// Phase: 0 unconfigured, 1 ready, 2 in-flight, 3 retry-allowed,
+// 4 succeeded, 5 exhausted/failed, 6 cancelled before dispatch,
+// 7 in-doubt (requires authenticated external reconciliation).
+define isolated actor StepRunActor as
+  state {
+    tenant_id: String = "";
+    run_id: String = "";
+    step_id: String = "";
+    source_revision: String = "";
+    activation_epoch: int = 0;
+    version: int = 0;
+    phase: int = 0;
+    attempts: int = 0;
+    max_attempts: int = 0;
+    used_keys: Array<String> = new Array<String>();
+    active_key: String = "";
+    result_receipt: String = "";
+    receipt_history: Array<String> = new Array<String>();
+  }
+
+  // Identities and source SHA must be authenticated by the caller; the
+  // actor cannot prove that a string names a repository revision.
+  pub configure(String tenant, String run, String step,
+                String exact_revision, int epoch,
+                int attempt_limit): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if s.phase != 0 || tenant == "" || run == "" || step == "" ||
+         exact_revision == "" || epoch < 1 ||
+         attempt_limit < 1 || attempt_limit > 8; then return false; fi
+      s.tenant_id = tenant;
+      s.run_id = run;
+      s.step_id = step;
+      s.source_revision = exact_revision;
+      s.activation_epoch = epoch;
+      s.max_attempts = attempt_limit;
+      s.phase = 1;
+      s.version = 1;
+      return true;
+    });
+  }
+
+  // The caller must durably reserve the idempotency key BEFORE any external
+  // dispatch; a successful transition is not authorization to call a tool.
+  pub begin_attempt(String tenant, String run, String step,
+                    String exact_revision, int expected_epoch,
+                    int expected_version, String idempotency_key): bool
+                    with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch ||
+         expected_version != s.version ||
+         s.version >= 2147483646 ||
+         (s.phase != 1 && s.phase != 3) ||
+         idempotency_key == "" || s.attempts >= s.max_attempts ||
+         s.used_keys.size >= 8; then return false; fi
+      for (const previous of s.used_keys) {
+        if previous == idempotency_key; then return false; fi
+      }
+      s.used_keys.add(idempotency_key);
+      s.active_key = idempotency_key;
+      s.attempts = s.attempts + 1;
+      s.phase = 2;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // Timeout is NOT a retry. An operation may already have committed remotely.
+  pub mark_unknown(String tenant, String run, String step,
+                   String exact_revision, int expected_epoch,
+                   int expected_version, String idempotency_key): bool
+                   with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch ||
+         expected_version != s.version ||
+         s.phase != 2 || idempotency_key != s.active_key ||
+         s.version >= 2147483646; then return false; fi
+      s.phase = 7;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // May be invoked ONLY after an independent trusted adapter proves the
+  // exact key was NOT applied externally. A receipt string is not such proof.
+  pub proved_not_applied(String tenant, String run, String step,
+                         String exact_revision, int expected_epoch,
+                         int expected_version, String idempotency_key,
+                         String evidence_receipt): bool
+                         with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch ||
+         expected_version != s.version ||
+         s.phase != 7 ||
+         idempotency_key != s.active_key || evidence_receipt == "" ||
+         s.version >= 2147483646; then return false; fi
+      for (const prior_receipt of s.receipt_history) {
+        if prior_receipt == evidence_receipt; then return false; fi
+      }
+      s.receipt_history.add(evidence_receipt);
+      if s.attempts < s.max_attempts; then
+        s.phase = 3;
+      else
+        s.phase = 5;
+      fi
+      s.result_receipt = evidence_receipt;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // Authenticated receipt from the remote effect adapter is REQUIRED.
+  // The method only records protocol data; it cannot authenticate origin.
+  pub commit_verified(String tenant, String run, String step,
+                      String exact_revision, int expected_epoch,
+                      int expected_version, String idempotency_key,
+                      String committed_receipt): bool
+                      with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch ||
+         expected_version != s.version ||
+         (s.phase != 2 && s.phase != 7) ||
+         idempotency_key != s.active_key || committed_receipt == "" ||
+         s.version >= 2147483646; then return false; fi
+      for (const prior_receipt of s.receipt_history) {
+        if prior_receipt == committed_receipt; then return false; fi
+      }
+      s.receipt_history.add(committed_receipt);
+      s.phase = 4;
+      s.result_receipt = committed_receipt;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // No cancellation once a step is in-flight or its outcome is uncertain.
+  // Those states require reconciliation or an explicit compensation workflow.
+  pub cancel_before_dispatch(String tenant, String run, String step,
+                             String exact_revision, int expected_epoch,
+                             int expected_version): bool
+                             with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch ||
+         expected_version != s.version ||
+         (s.phase != 1 && s.phase != 3) ||
+         s.version >= 2147483646; then return false; fi
+      s.phase = 6;
+      s.version = s.version + 1;
+      return true;
+    });
+  }
+
+  // These read-only observations are NOT dispatch permissions or receipts.
+  pub phase_of(String tenant, String run, String step,
+               String exact_revision, int expected_epoch): Result<int, String>
+               with state.read {
+    return self.handle_state(|s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch || s.phase == 0; then
+        return Err("stale or foreign step");
+      fi
+      return Ok(s.phase);
+    });
+  }
+
+  pub current_version(String tenant, String run, String step,
+                      String exact_revision, int expected_epoch): Result<int, String>
+                      with state.read {
+    return self.handle_state(|s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch || s.phase == 0; then
+        return Err("stale or foreign step");
+      fi
+      return Ok(s.version);
+    });
+  }
+
+  pub attempts_used(String tenant, String run, String step,
+                    String exact_revision, int expected_epoch): Result<int, String>
+                    with state.read {
+    return self.handle_state(|s| -> {
+      if tenant != s.tenant_id || run != s.run_id ||
+         step != s.step_id || exact_revision != s.source_revision ||
+         expected_epoch != s.activation_epoch || s.phase == 0; then
+        return Err("stale or foreign step");
+      fi
+      return Ok(s.attempts);
+    });
+  }
+end

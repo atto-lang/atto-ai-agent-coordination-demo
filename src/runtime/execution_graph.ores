@@ -177,6 +177,47 @@ define isolated actor ExecutionGraphActor as
     });
   }
 
+  // Step Functions-style failure propagation: a pending node whose
+  // prerequisite already failed or was cancelled can never become ready.
+  // Mark it cancelled under a single exclusive loan (no tool invocation).
+  // This does not cancel running children or roll back external effects.
+  pub cancel_blocked(String node, int expected_revision): bool with state.read, state.write {
+    return self.handle_state(critical |s| -> {
+      if !s.sealed || expected_revision != s.revision ||
+         s.revision >= 2147483646; then return false; fi
+      let int position = -1;
+      let int i = 0;
+      for (const known of s.node_ids) {
+        if known == node; then position = i; fi
+        i = i + 1;
+      }
+      if position < 0; then return false; fi
+      if s.node_states[position] != 0; then return false; fi
+
+      let bool blocked = false;
+      let int dep_i = 0;
+      for (const dependent of s.dependents) {
+        if dependent == node; then
+          let int j = 0;
+          for (const known of s.node_ids) {
+            if known == s.prerequisites[dep_i] &&
+               (s.node_states[j] == 3 || s.node_states[j] == 4); then
+              blocked = true;
+            fi
+            j = j + 1;
+          }
+        fi
+        dep_i = dep_i + 1;
+      }
+      // A pending root node or a node with merely running prerequisites
+      // cannot be silently cancelled through this propagation API.
+      if !blocked; then return false; fi
+      s.node_states[position] = 4;
+      s.revision = s.revision + 1;
+      return true;
+    });
+  }
+
   pub current_revision(): int with state.read {
     return self.handle_state(|s| -> {
       return s.revision;

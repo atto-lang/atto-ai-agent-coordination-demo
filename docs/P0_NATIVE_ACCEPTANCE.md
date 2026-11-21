@@ -15,7 +15,14 @@ worker-to-worker hop**, not an actor-pipeline operator, direct 3-stage routing,
 durable delivery or remote dispatch. The new exact oracle is
 `evidence-ready|approved|executed` and is still unexecuted by Java.
 
-The final result is an **inert string receipt**: no LLM inference, file edit, network I/O, GitHub mutation or other tool side effect occurs. Main is the router; the demo does **not** demonstrate direct actor-to-actor routing, distributed coordination, authenticated policy admission, persistence or crash recovery. These remain separate milestones.
+The third fixture, `tests/guest/step_agent_flow.ores`, adds a phase-guarded
+agent workflow (early completion, foreign run and duplicate start are
+rejected). Its terminal action is **preview only** and its byte-exact oracle
+is `agent-step:preview-complete`. The older-syntax fixture does not prove
+the 21 sealed actor classes compile or that real approvals are authenticated.
+
+The final result is an **inert string receipt**: no LLM inference, file edit, network I/O, GitHub mutation or other tool side effect occurs. The primary pipeline is main-mediated; the second fixture demonstrates one
+direct actor-to-actor hop, but no full distributed routing, distributed coordination, authenticated policy admission, persistence or crash recovery. These remain separate milestones.
 
 ## Trusted native execution prerequisites
 
@@ -44,8 +51,8 @@ The runner requires: (1) exact 40-hex compiler source HEAD, (2) clean tracked co
 
 The Java reference launcher currently implements `--check` via
 `LinkedProgramRunner.validate`. The new fail-closed gate
-`scripts/check-native-actors.mjs` invokes it against **all 20 current actor files** in `src/`, `src/memory/`, and
-`src/runtime/` plus **both** guest fixtures (22 positive inputs). It additionally
+`scripts/check-native-actors.mjs` invokes it against **all 21 current actor files** in `src/`, `src/memory/`, and
+`src/runtime/` plus **three** guest fixtures (24 positive inputs). It additionally
 runs `tests/guest/negative/wrong_actor_mail_type.ores` and requires a targeted
 `ActorRef.send mailbox value` type diagnostic; a nonzero parser failure alone
 does not count as success. The combined gate
@@ -69,8 +76,9 @@ node --test tests/*.test.mjs
 node scripts/run-native-acceptance.mjs
 ```
 
-The combined gate returns `NATIVE_CHECK_RESULT` (ten positive and one negative compiler check),
-`NATIVE_GUEST_RESULT` (two executed programs and byte-exact stdout), and
+The combined gate returns `NATIVE_CHECK_RESULT` (24 positive and one negative compiler checks),
+`NATIVE_GUEST_RESULT` (two byte-exact actor-mail guests),
+`STEP_NATIVE_GUEST_RESULT` (one guarded step guest), and
 `NATIVE_ACCEPTANCE_RESULT` (demo source HEAD/tree) **only after all checks
 succeed**. These are distinct from host-only Node.js reference-model tests.
 
@@ -87,8 +95,8 @@ the observed actor-mail stdout.
 | Gate | Required evidence | Status |
 | --- | --- | --- |
 | JS specification/model | Exact test file blobs + executed TAP | Locally executed (reference tests, not Oreslang) |
-| Native demo guest | Two Java OresMain executions: `1|2|evidence-ready|approved|executed` and `evidence-ready|approved|executed`, verified compiler build SHA | Pending |
-| Eight preexisting `src/*.ores` actors | Java OresMain `--check` each actor file, both guest fixtures, plus rejection of ill-typed mailbox send | Harness committed; native checks pending |
+| Native demo guest | Three Java OresMain executions: `1|2|evidence-ready|approved|executed`, `evidence-ready|approved|executed` and `agent-step:preview-complete`, verified compiler build SHA | Pending |
+| All 21 actor sources | Java OresMain `--check` eight core, nine memory, four runtime actors and three guest fixtures; reject ill-typed mailbox send | Harness committed; native checks pending |
 | Actor cross-message causality | Child send/receive with real worker-to-worker routing, timeout/cancel checks | Pending (main router only) |
 | Authenticated authorization | Capability checks, authenticated tool receipts, fail-closed unauthenticated instructions | Pending |
 | Durable recovery reference | Node.js fsync journal replay, SIGKILL and ambiguous receipt reconciliation | Executed locally; native/distributed recovery pending |
@@ -98,7 +106,8 @@ the observed actor-mail stdout.
 
 ## CI limitations
 
-The most recently inspected original `contracts` job had **zero executed steps** (run 40816132873); later runs must be checked separately. That is a runner admission failure, not a compiler or test result. The repository's source-only workflow runs `node --test tests/*.test.mjs` and cannot fetch another private repository using its default `GITHUB_TOKEN`. Do not make the source-only job claim native execution.
+Previously inspected `contracts` runs failed with **zero executed steps**;
+inspect the exact-head run created by this PR independently before any test claims. That is a runner admission failure, not a compiler or test result. The repository's source-only workflow runs `node --test tests/*.test.mjs` and cannot fetch another private repository using its default `GITHUB_TOKEN`. Do not make the source-only job claim native execution.
 
 The **reference** suite now also includes a JSON HTTP interoperability gateway and a
 hash-chained Node.js workflow journal with an actual subprocess SIGKILL test.

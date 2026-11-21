@@ -29,13 +29,14 @@ Read [the memory-pipeline architecture](docs/MEMORY_PIPELINE.md) and the [native
 
 ## Agent operating-runtime graph contracts
 
-Three additional `isoactor` prototypes under `src/runtime/` extend the **actor graph** and **execution graph** while reusing `KnowledgeGraphActor` as a knowledge-graph shard and `DecisionTreeActor` / `DecisionGateActor` for deterministic decisions:
+Four isolated-actor prototypes under `src/runtime/` extend the **actor graph** and **execution graph** while reusing `KnowledgeGraphActor` as a knowledge-graph shard and `DecisionTreeActor` / `DecisionGateActor` for deterministic decisions:
 
 | Actor | Purpose |
 | --- | --- |
 | `ActorRouteDirectoryActor` | Stable logical names, incarnation/generation/route-epoch-pinned placement hints |
 | `ExecutionGraphActor` | Bounded dependency DAG, parallel ready nodes, fan-in, revision-checked transitions |
 | `WorkflowEffectLedgerActor` | One-time effect preparation, dispatched/unknown status, explicit external reconciliation |
+| `StepRunActor` | Single-run step phases, CAS fencing, 1–8 attempts, unique keys, in-doubt freeze |
 
 The graph/placement model is **not** a distributed actor transport; workflow effect bookkeeping is **not** durable storage, exactly-once delivery or tool execution. See [the actor/runtime architecture](docs/AGENT_RUNTIME_ARCHITECTURE.md) and [native runtime acceptance matrix](tests/actor-runtime-acceptance.md).
 
@@ -69,10 +70,10 @@ demo checkout's exact Git HEAD. Set it with:
 export ORESLANG_DEMO_SHA="$(git rev-parse HEAD)"
 ```
 
-It invokes the compiler's real `--check` mode on all eight actor files
-plus **two** guest fixtures, and also requires the Java type checker to reject
+It invokes the compiler's real `--check` mode on all 21 actor files
+plus **three** guest fixtures, and also requires the Java type checker to reject
 an intentionally invalid `ActorMail<String>` send with a targeted diagnostic.
-The two executed guests must both match byte-exact output oracles. A clean,
+All three executed guests must match byte-exact output oracles. A clean,
 built compiler and dependencies remain prerequisites. See the acceptance doc
 for Maven build commands. The latest hosted CI job still has no executing
 steps, so this gate is **committed but not yet executed against Java**.
@@ -130,9 +131,34 @@ The exact expected stdout is `evidence-ready|approved|executed`. The Java
 guest launcher has **not yet run** on the new fixture. Source-only checks do
 not establish mailbox correctness, physical isolation or end-to-end recovery.
 
+## Step Functions alignment (native execution pending)
+
+The private [step-function demo](https://github.com/ores-truffle-oreslang/oreslang-step-function-demo)
+uses native Oreslang fixtures for guarded start/completion, bounded retries,
+early cancellation, explicit branching, parallel fan-out/join and preview-only
+review. Those fixtures are *not* a durable engine or verified native guest pass.
+
+This branch adds a sealed `StepRunActor` with tenant/run/step identity,
+activation epoch, compare-and-set version, unique attempt keys and bounded
+retry count. An **uncertain** effect cannot be retried or cancelled until an
+authenticated external reconciler determines the outcome; the actor itself
+cannot authenticate receipt strings. `ExecutionGraphActor.cancel_blocked`
+propagates failed/cancelled prerequisites only to **pending** successors.
+
+`tests/guest/step_agent_flow.ores` is a third, older-syntax native guest
+fixture that rejects premature completion, foreign-run and duplicate-start
+mail, then routes research/review to a **preview-only** worker. It never
+authorizes real publishing. Its exact oracle is
+`agent-step:preview-complete`. Both the standalone
+`scripts/run-step-native-guest.mjs` and the combined native gate must
+execute the actual pinned Java compiler and exact stdout; Node structural
+checks do not establish that execution.
+
+See [Step Functions integration audit and acceptance gates](docs/STEP_FUNCTION_ALIGNMENT_20261029.md).
+
 ## Native compiler gate across all actors
 
-With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and three runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
+With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and four runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
 
 ## Validation
 
