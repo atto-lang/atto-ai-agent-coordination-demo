@@ -28,20 +28,25 @@ const signEnvelope = (p, privateKey = keys.privateKey) => {
 function harness(t, overrides={}) {
   const dir = mkdtempSync(join(tmpdir(), 'ores-ingress-'));
   t.after(() => rmSync(dir,{recursive:true,force:true}));
-  let submits = 0; let received = null;
+  let submits = 0; let received = null; let receiptSequence = 0;
+  const localClaim = create_local_replay_claims(dir);
   const receipt = async request => signEnvelope({
     version: 1, issuer: 'trusted-issuer', audience: 'oreslang.context.data.v1',
-    key_id: 'trusted-key', receipt_id: 'unique-receipt-a',
+    key_id: 'trusted-key', receipt_id: overrides.uniqueReceipts
+      ? 'unique-receipt-' + (++receiptSequence) : 'unique-receipt-a',
     ...request, not_before_ms: now-1000, expires_at_ms: now+1000,
     ...(overrides.payload || {})
   }, overrides.signer || keys.privateKey);
   const props = {
     tenant_id: 'tenant-a', task_id: 'task-a', exact_revision: revision,
-    tokenizer_id: 'mock-utf8-byte-counter', token_budget: 16384,
+    dispatch_id: 'dispatch-a', tokenizer_id: 'mock-utf8-byte-counter', token_budget: 16384,
     countTokens: json => Buffer.byteLength(json, 'utf8'), // mock oracle, NOT a model tokenizer
     keys: {'trusted-key': keys.publicKey}, issuer: 'trusted-issuer',
     trustedReceipts: receipt, now: () => now,
-    claimReceipt: create_local_replay_claims(dir),
+    claimReceipt: localClaim,
+    claimDispatch: bound => localClaim('model-dispatch', createHash('sha256')
+      .update(JSON.stringify([bound.tenant_id, bound.task_id, bound.exact_revision, bound.dispatch_id]))
+      .digest('hex')),
     resolveExcerpt: async ({memory_id,evidence_ref}) => ({memory_id,evidence_ref,excerpt}),
     authorizeDispatch: async () => true, isCurrentRevision: async () => true,
     submitModelData: async data => { submits++; received = data; },
@@ -49,6 +54,7 @@ function harness(t, overrides={}) {
   };
   delete props.payload;
   delete props.signer;
+  delete props.uniqueReceipts;
   return {
     make: () => create_trusted_manifest_dispatch(props),
     get submits(){return submits}, get received(){return received}, props
@@ -59,6 +65,9 @@ test('authenticated, data-only model handoff with exact provenance and bounded t
   assert.equal(await h.make().dispatch(manifest()),true);
   assert.equal(h.submits,1);
   assert.equal(h.received.classification,'untrusted_context_data');
+  assert.equal(h.received.dispatch_id, 'dispatch-a');
+  assert.equal(h.received.context_sha256,
+    createHash('sha256').update(h.received.context_json,'utf8').digest('hex'));
   const parsed = JSON.parse(h.received.context_json);
   assert.equal(parsed.records[0].excerpt,excerpt);
   assert.equal(parsed.records[0].memory_id,'mem-a');
@@ -157,4 +166,83 @@ test('untrusted model cannot supply verifier, signed receipt or tool authority t
 test('missing durable claim function is fatal to trusted bridge configuration', async t => {
   const h=harness(t,{claimReceipt:null});
   assert.throws(()=>h.make(), /trusted manifest dispatch configuration required/);
+});
+
+test('an independent bridge cannot resubmit the same logical dispatch with fresh signed receipts', async t => {
+  const h = harness(t, {uniqueReceipts:true});
+  let attempts=0;
+  const originalClaim = h.props.claimDispatch;
+  h.props.claimDispatch = async bound => { attempts++; return originalClaim(bound); };
+  assert.equal(await h.make().dispatch(manifest()), true);
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(attempts, 2, 'second signed receipt reached storage claim');
+  assert.equal(h.submits, 1);
+});
+test('unknown remote completion remains claimed across new bridge instances', async t => {
+  let sends = 0;
+  const h = harness(t, {
+    uniqueReceipts:true,
+    submitModelData:async () => { sends++; throw Error('remote outcome uncertain'); }
+  });
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(sends, 1);
+});
+test('missing atomic dispatch claim, invalid dispatch scope and non-true claims fail closed', async t => {
+  const h = harness(t);
+  assert.throws(() => create_trusted_manifest_dispatch({...h.props,claimDispatch:null}),
+    /trusted manifest dispatch configuration required/);
+  assert.throws(() => create_trusted_manifest_dispatch({...h.props,dispatch_id:''}),
+    /trusted manifest dispatch configuration required/);
+  const d = harness(t,{claimDispatch:async()=>({approved:true})});
+  assert.equal(await d.make().dispatch(manifest()),false);
+  assert.equal(d.submits,0);
+});
+
+test('policy revocation after durable claim denies final dispatch and remains claimed', async t => {
+  let policyReads = 0, sends = 0;
+  const h = harness(t, {
+    uniqueReceipts: true,
+    authorizeDispatch: async () => ++policyReads !== 2,
+    submitModelData: async () => { sends++; }
+  });
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(policyReads, 2, 'post-claim policy must be checked');
+  h.props.authorizeDispatch = async () => true; // policy restored, claim still spent
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(sends, 0);
+});
+test('revision changing during durable claim blocks model handoff', async t => {
+  let current = true, sends = 0;
+  const h = harness(t, {
+    isCurrentRevision: async () => current,
+    claimDispatch: async () => { current = false; return true; },
+    submitModelData: async () => { sends++; }
+  });
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(sends, 0);
+});
+test('changed serialized context cannot reuse logical dispatch ID', async t => {
+  const h = harness(t, { uniqueReceipts: true });
+  assert.equal(await h.make().dispatch(manifest()), true);
+  h.props.resolveExcerpt = async ({memory_id,evidence_ref}) =>
+    ({memory_id,evidence_ref,excerpt:'Different bounded content'});
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(h.submits, 1);
+});
+test('claim storage faults fail closed without model invocation', async t => {
+  let sends = 0;
+  const h = harness(t,{
+    claimDispatch:async()=>{throw Error('claim durability uncertain')},
+    submitModelData:async()=>{sends++}
+  });
+  assert.equal(await h.make().dispatch(manifest()), false);
+  assert.equal(sends,0);
+});
+
+test('parallel bridges with distinct signed receipts allow one durable dispatch claim', async t => {
+  const h = harness(t, {uniqueReceipts:true});
+  const results = await Promise.all(Array.from({length:16}, () => h.make().dispatch(manifest())));
+  assert.equal(results.filter(Boolean).length, 1);
+  assert.equal(h.submits, 1);
 });
