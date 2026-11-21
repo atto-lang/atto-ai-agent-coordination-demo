@@ -56,6 +56,15 @@ export class SqliteWorkflowSupervisor {
         PRIMARY KEY(tenant, run, step),
         FOREIGN KEY(tenant, run) REFERENCES workflow(tenant, run)
       );
+      CREATE TABLE IF NOT EXISTS inbox (
+        tenant TEXT NOT NULL, run TEXT NOT NULL, message_id TEXT NOT NULL,
+        step TEXT NOT NULL, effect_key TEXT NOT NULL,
+        digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'accepted',
+        PRIMARY KEY(tenant, run, message_id),
+        UNIQUE(tenant, run, step),
+        FOREIGN KEY(tenant, run) REFERENCES workflow(tenant, run),
+        FOREIGN KEY(effect_key) REFERENCES effects(effect_key)
+      );
     `);
   }
   close() { this.#db.close(); }
@@ -106,6 +115,49 @@ export class SqliteWorkflowSupervisor {
       return {epoch,version:version+1,state:'in_doubt'};
     });
   }
+  // The trusted ingress atomically records a deduplicated inbound message
+  // and a PREPARED outbox effect. It performs no external I/O. A duplicate
+  // message, step or effect key FAILS closed; caller may query inspected state
+  // but cannot force a second command by retrying this admission.
+  accept_step({tenant,run,revision,epoch,version,step,message_id,key,digest},capability) {
+    this.#verifier.require(capability,'accept_step',
+      {tenant,run,revision,epoch,version,step,message_id,key,digest});
+    require_that(valid_id(step) && valid_id(message_id) && valid_id(key) &&
+      valid_digest(digest), 'invalid inbox/outbox identity');
+    return this.#transaction(() => {
+      this.#fenced(tenant,run,revision,epoch,version);
+      // Both inserts and workflow CAS commit together or not at all.
+      this.#db.prepare("INSERT INTO effects(tenant,run,step,effect_key,digest,state) VALUES(?,?,?,?,?,'prepared')")
+        .run(tenant,run,step,key,digest);
+      this.#db.prepare('INSERT INTO inbox(tenant,run,message_id,step,effect_key,digest) VALUES(?,?,?,?,?,?)')
+        .run(tenant,run,message_id,step,key,digest);
+      this.#db.prepare('UPDATE workflow SET version=version+1 WHERE tenant=? AND run=?')
+        .run(tenant,run);
+      return {epoch,version:version+1,step,state:'prepared'};
+    });
+  }
+  // A worker must durably claim the outbox item BEFORE dispatching the
+  // external operation. Once claimed it is permanently IN_DOUBT; recovery
+  // MUST query an authenticated provider by stable key+digest and MUST NOT
+  // call this method again or treat a timeout as an uncommitted operation.
+  claim_dispatch({tenant,run,revision,epoch,version,step,key,digest},capability) {
+    this.#verifier.require(capability,'claim_dispatch',
+      {tenant,run,revision,epoch,version,step,key,digest});
+    require_that(valid_id(step) && valid_id(key) && valid_digest(digest),
+      'invalid dispatch claim');
+    return this.#transaction(() => {
+      this.#fenced(tenant,run,revision,epoch,version);
+      const row=this.#db.prepare('SELECT * FROM effects WHERE tenant=? AND run=? AND step=?')
+        .get(tenant,run,step);
+      require_that(row && row.effect_key===key && row.digest===digest &&
+        row.state==='prepared', 'outbox already claimed, invalid or uncertain');
+      this.#db.prepare("UPDATE effects SET state='in_doubt' WHERE tenant=? AND run=? AND step=? AND state='prepared'")
+        .run(tenant,run,step);
+      this.#db.prepare('UPDATE workflow SET version=version+1 WHERE tenant=? AND run=?')
+        .run(tenant,run);
+      return {epoch,version:version+1,state:'in_doubt',step,key,digest};
+    });
+  }
   // The caller MUST inject a trusted local adapter that verifies the durable
   // remote result by exact idempotency key+digest; strings are NOT signatures.
   reconcile({tenant,run,revision,epoch,version,step,decision,receipt}, adapter, capability) {
@@ -114,16 +166,28 @@ export class SqliteWorkflowSupervisor {
       (decision==='committed' || decision==='not_applied'), 'invalid reconciliation');
     require_that(adapter && typeof adapter.verify_receipt==='function',
       'trusted verification adapter required');
+    // Remote receipt validation must NOT run under SQLite's BEGIN IMMEDIATE
+    // writer lock; an authoritative provider may be slow or fail. Read the
+    // claimed key/digest first, verify outside the transaction, then re-check
+    // the exact same row and workflow fence atomically before settlement.
+    this.#fenced(tenant,run,revision,epoch,version);
+    const expected=this.#db.prepare('SELECT effect_key,digest,state FROM effects WHERE tenant=? AND run=? AND step=?')
+      .get(tenant,run,step);
+    require_that(expected && expected.state==='in_doubt', 'effect not in doubt');
+    const verified=adapter.verify_receipt({tenant,run,step,key:expected.effect_key,
+      digest:expected.digest,decision,receipt});
+    require_that(verified===true, 'unverified remote receipt');
     return this.#transaction(() => {
       this.#fenced(tenant,run,revision,epoch,version);
-      const effect=this.#db.prepare('SELECT * FROM effects WHERE tenant=? AND run=? AND step=?')
+      const current=this.#db.prepare('SELECT effect_key,digest,state FROM effects WHERE tenant=? AND run=? AND step=?')
         .get(tenant,run,step);
-      require_that(effect && effect.state==='in_doubt', 'effect not in doubt');
-      const verified=adapter.verify_receipt({tenant,run,step,key:effect.effect_key,
-        digest:effect.digest,decision,receipt});
-      require_that(verified===true, 'unverified remote receipt');
+      require_that(current && current.state==='in_doubt' &&
+        current.effect_key===expected.effect_key && current.digest===expected.digest,
+        'effect changed during receipt verification');
       this.#db.prepare('UPDATE effects SET state=?, receipt=? WHERE tenant=? AND run=? AND step=?')
         .run(decision,receipt,tenant,run,step);
+      this.#db.prepare('UPDATE inbox SET state=? WHERE tenant=? AND run=? AND step=?')
+        .run(decision,tenant,run,step);
       this.#db.prepare('UPDATE workflow SET version=version+1 WHERE tenant=? AND run=?')
         .run(tenant,run);
       return {epoch,version:version+1,state:decision};
@@ -150,6 +214,9 @@ export class SqliteWorkflowSupervisor {
     if (!workflow || workflow.revision!==revision) return null;
     const effects=this.#db.prepare('SELECT step,effect_key,digest,state,receipt FROM effects WHERE tenant=? AND run=? ORDER BY step')
       .all(tenant,run);
-    return {workflow:{...workflow},effects:effects.map(x=>({...x}))};
+    const inbox=this.#db.prepare('SELECT message_id,step,effect_key,digest,state FROM inbox WHERE tenant=? AND run=? ORDER BY message_id')
+      .all(tenant,run);
+    return {workflow:{...workflow},effects:effects.map(x=>({...x})),
+      inbox:inbox.map(x=>({...x}))};
   }
 }

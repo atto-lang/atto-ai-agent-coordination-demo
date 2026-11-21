@@ -67,7 +67,7 @@ test('real process-kill test and all native source manifests are present',()=>{
  assert.match(testSource,/process\.kill\(process\.pid,'SIGKILL'\)/);
  assert.match(testSource,/killed\.signal,'SIGKILL'/);
  assert.match(testSource,/remote-receipt\.json/);
- assert.match(checker,/'src\/runtime': 5/);
- assert.match(gate,/\['src\/runtime',5\]/);
+ assert.match(checker,/'src\/runtime': 6/);
+ assert.match(gate,/\['src\/runtime',6\]/);
  assert.match(gate,/guest_scenarios:3/);
 });

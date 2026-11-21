@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const actorDirs = { 'src': 8, 'src/memory': 9, 'src/runtime': 5 };
+const actorDirs = { 'src': 8, 'src/memory': 9, 'src/runtime': 6 };
 const requiredGuestPaths = ['tests/guest/agent_pipeline.ores', 'tests/guest/direct_agent_hop.ores', 'tests/guest/step_agent_flow.ores'];
 const negativePath = 'tests/guest/negative/wrong_actor_mail_type.ores';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -49,7 +49,7 @@ const base = fileURLToPath(new URL('../', import.meta.url));
 const actorPaths = [];
 for (const [dir, minimum] of Object.entries(actorDirs))
   actorPaths.push(...listActors(base, dir, minimum));
-if (actorPaths.length < 21) fail('incomplete actor source manifest');
+if (actorPaths.length < 23) fail('incomplete actor source manifest');
 const files = [...actorPaths, ...requiredGuestPaths].sort();
 if (new Set(files).size !== files.length) fail('duplicate native source path');
 const outcomes = [];

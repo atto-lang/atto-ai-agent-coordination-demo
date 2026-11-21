@@ -1,7 +1,7 @@
 // Local HMAC capability contract for a trusted issuer and a separate verifier.
 // NOT a distributed identity service or a replacement for authenticated receipts.
 import { createHmac, timingSafeEqual } from 'node:crypto';
-const allowed = new Set(['create_run','activate','prepare_effect','reconcile','finish','inspect']);
+const allowed = new Set(['create_run','activate','prepare_effect','accept_step','claim_dispatch','reconcile','finish','inspect']);
 const scoped = /^[a-zA-Z0-9_-]{1,96}$/;
 const sha = /^[a-f0-9]{40}$/;
 function require_claims(claims) {
@@ -13,7 +13,7 @@ function require_claims(claims) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) throw Error('invalid capability scope');
   if (!scoped.test(s.tenant||'') || !scoped.test(s.run||'') || !sha.test(s.revision||'')) throw Error('invalid capability identity');
   for (const [k,v] of Object.entries(s)) {
-    if (!['tenant','run','revision','epoch','version','step','key','digest','decision','receipt'].includes(k)) throw Error('unknown capability scope');
+    if (!['tenant','run','revision','epoch','version','step','message_id','key','digest','decision','receipt'].includes(k)) throw Error('unknown capability scope');
     if (['epoch','version'].includes(k) ? !Number.isSafeInteger(v) || v<0 : typeof v !== 'string') throw Error('invalid capability value');
   }
 }
