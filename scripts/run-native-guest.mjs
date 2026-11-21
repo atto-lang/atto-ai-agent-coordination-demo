@@ -22,10 +22,11 @@ const classes = join(root, 'target', 'classes');
 const cpFile = join(root, 'target', 'runtime-classpath.txt');
 if (!existsSync(classes) || !existsSync(cpFile))
   fail('missing built classes or runtime classpath');
-let head, dirty;
+let head, tree, dirty;
 try {
   const opts = { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 };
   head = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], opts).trim();
+  tree = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD^{tree}'], opts).trim();
   dirty = execFileSync('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], opts).trim();
 } catch { fail('compiler checkout provenance unavailable'); }
 if (head !== sha || dirty) fail('compiler SHA mismatch or modified tracked source');
@@ -57,6 +58,7 @@ for (const name of cases) {
     name, passed, exit_code: run.status, signal: run.signal,
     stdout_exact: Boolean(run.stdout && run.stdout.equals(expected)),
     source_sha256: sha256(sourceBytes), oracle_sha256: sha256(expected),
+    stdout_sha256: run.stdout ? sha256(run.stdout) : null,
     duration_ms: Date.now() - start,
     stderr: run.stderr ? run.stderr.toString('utf8').slice(-1200) : '',
     error: run.error ? String(run.error.message) : null
@@ -65,7 +67,7 @@ for (const name of cases) {
 }
 const ok = results.length === cases.length && results.every(r => r.passed);
 console.log('NATIVE_GUEST_RESULT ' + JSON.stringify({
-  compiler_source_head: head, cases_required: cases.length,
+  compiler_source_head: head, compiler_source_tree: tree, cases_required: cases.length,
   cases_executed: results.length, passed: ok, results,
   scope: 'real Java guest stdout: mediated pipeline plus direct ActorRef hop, NOT durable recovery'
 }));
