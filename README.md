@@ -134,6 +134,10 @@ not establish mailbox correctness, physical isolation or end-to-end recovery.
 
 With an independently authorized, clean and built Java/Graal compiler checkout, set `ORESLANG_COMPILER_ROOT` and exact `ORESLANG_COMPILER_SHA`, then run `node scripts/check-native-actors.mjs`. It discovers the eight core, nine memory and three runtime actors, checks their source hashes and compiles each with `OresMain --check`, alongside guest fixtures. This gate is **not yet executed**, and a successful parse/typecheck would still not prove guest behavior or durability.
 
+## Native CI evidence hardening
+
+The combined gate now verifies a complete source-hash-identified compiler manifest, including the targeted negative mailbox type check, **and both** executed guest receipts. It fails closed on truncated, forged, stale or missing reports. The validator's regression tests are in `tests/native-evidence.test.mjs`, and alternate-runner authorization constraints in [CI evidence audit](docs/CI_NATIVE_EVIDENCE_AUDIT.md). Passing these **Node receipt tests** does not establish successful native compilation or crash recovery.
+
 ## Validation
 
 ```sh

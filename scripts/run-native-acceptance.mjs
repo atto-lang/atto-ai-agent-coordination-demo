@@ -4,6 +4,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { receiptFromOutput, verifyNativeCheck, verifyNativeGuest } from './native-evidence.mjs';
 const scripts = ['check-native-actors.mjs', 'run-native-guest.mjs'];
 const demo = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
 const expected = process.env.ORESLANG_DEMO_SHA ?? '';
@@ -20,27 +21,8 @@ try {
   dirty = execFileSync('git',['-C',demo,'status','--porcelain','--untracked-files=no'],opt).trim();
 } catch { fail('demo Git checkout unavailable'); }
 if (head !== expected || dirty) fail('demo revision mismatch or dirty tracked source');
-function requireEvidence(script, output) {
-  const marker = script === 'check-native-actors.mjs'
-    ? 'NATIVE_CHECK_RESULT ' : 'NATIVE_GUEST_RESULT ';
-  const matches = output.split('\n').filter(line => line.startsWith(marker));
-  if (matches.length !== 1) fail('missing or ambiguous evidence marker: ' + script);
-  let record;
-  try { record = JSON.parse(matches[0].slice(marker.length)); }
-  catch { fail('invalid JSON evidence: ' + script); }
-  if (record.passed !== true || record.compiler_source_head !== process.env.ORESLANG_COMPILER_SHA)
-    fail('unverified compiler identity or failed result: ' + script);
-  if (script === 'check-native-actors.mjs') {
-    if (record.checked !== 10 || record.required !== 10 ||
-        !Array.isArray(record.outcomes) || record.outcomes.length !== 10 ||
-        !record.outcomes.every(x => x.passed === true) ||
-        record.negative?.passed !== true)
-      fail('incomplete positive or negative compiler checks');
-  } else if (record.cases_required !== 2 || record.cases_executed !== 2 ||
-      !Array.isArray(record.results) || record.results.length !== 2 ||
-      !record.results.every(x => x.passed === true && x.stdout_exact === true))
-      fail('incomplete actual guest execution');
-}
+let nativeCheck = null;
+let guestCheck = null;
 for (const script of scripts) {
   const file = fileURLToPath(new URL(script, import.meta.url));
   const result = spawnSync(process.execPath, [file], {
@@ -53,8 +35,32 @@ for (const script of scripts) {
     console.error('NATIVE_ACCEPTANCE_UNVERIFIED gate=' + script);
     process.exit(1);
   }
-  requireEvidence(script, result.stdout || '');
+  try {
+    if (script === 'check-native-actors.mjs') {
+      const report = receiptFromOutput(result.stdout, 'NATIVE_CHECK_RESULT');
+      nativeCheck = verifyNativeCheck(report, demo, process.env.ORESLANG_COMPILER_SHA);
+    } else if (script === 'run-native-guest.mjs') {
+      const report = receiptFromOutput(result.stdout, 'NATIVE_GUEST_RESULT');
+      guestCheck = verifyNativeGuest(report, demo, process.env.ORESLANG_COMPILER_SHA);
+    } else {
+      fail('unexpected native acceptance gate');
+    }
+  } catch (error) {
+    fail('invalid native evidence for ' + script + ': ' + String(error.message));
+  }
 }
+if (!nativeCheck || !guestCheck || nativeCheck.checked_actors < 20 ||
+    nativeCheck.checked_guest_sources !== 2 ||
+    nativeCheck.negative_native_checks !== 1 ||
+    guestCheck.guest_scenarios !== 2)
+  fail('native acceptance incomplete');
+
 console.log('NATIVE_ACCEPTANCE_RESULT ' + JSON.stringify({demo_head:head,
-  demo_tree:tree, checked_actors:8, positive_native_checks:10, negative_native_checks:1, guest_scenarios:2, passed:true,
+  demo_tree:tree, checked_actors:nativeCheck.checked_actors,
+  positive_native_checks:nativeCheck.positive_native_checks,
+  negative_native_checks:nativeCheck.negative_native_checks,
+  checked_guest_sources:nativeCheck.checked_guest_sources,
+  native_manifest_sha256:nativeCheck.manifest_sha256,
+  guest_scenarios:guestCheck.guest_scenarios,
+  verified_guest_hashes:guestCheck.verified_guest_hashes, passed:true,
   scope:'Java positive and negative checks plus two guest stdout oracles; no crash recovery'}));

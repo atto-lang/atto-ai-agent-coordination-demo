@@ -9,6 +9,11 @@ test('native acceptance chains compile checks before guest execution', () => {
   assert.match(source,/expected = process\.env\.ORESLANG_DEMO_SHA/);
   assert.match(source,/HEAD\^\{tree\}/);
   assert.match(source,/--untracked-files=no/);
+  assert.match(source,/verifyNativeCheck/);
+  assert.match(source,/verifyNativeGuest/);
+  assert.match(source,/receiptFromOutput/);
+  assert.match(source,/nativeCheck.negative_native_checks !== 1/);
+  assert.match(source,/guestCheck.guest_scenarios !== 2/);
 });
 test('runner refuses absent exact demo Git revision', () => {
   const env={...process.env}; delete env.ORESLANG_DEMO_SHA;
@@ -23,14 +28,15 @@ test('runner rejects symbolic demo refs', () => {
   assert.equal(r.status,2);
 });
 
-test('full release marker requires structured evidence from all native sub-gates', () => {
-  assert.match(source,/function requireEvidence\(script, output\)/);
-  assert.match(source,/NATIVE_CHECK_RESULT /);
-  assert.match(source,/NATIVE_GUEST_RESULT /);
-  assert.match(source,/record\.compiler_source_head !== process\.env\.ORESLANG_COMPILER_SHA/);
-  assert.match(source,/record\.checked !== 10/);
-  assert.match(source,/record\.negative\?\.passed !== true/);
-  assert.match(source,/record\.cases_executed !== 2/);
-  assert.match(source,/x\.stdout_exact === true/);
-  assert.match(source,/requireEvidence\(script, result\.stdout \|\| ''\)/);
+test('native evidence helper checks per-file and negative typecheck receipts', () => {
+  const helper = readFileSync(new URL('../scripts/native-evidence.mjs', import.meta.url), 'utf8');
+  for (const check of [
+    'entry.passed !== true', 'entry.exit_code !== 0',
+    'entry.signal !== null', 'SHA256.test(entry.source_sha256)',
+    'neg.expected_type_error',
+    'neg.diagnostic.includes(neg.expected_type_error)',
+    'report.cases_executed !== 2',
+    'entry.stdout_exact !== true',
+    'sha256(readFileSync(path)) !== expected'
+  ]) assert.ok(helper.includes(check), check);
 });
