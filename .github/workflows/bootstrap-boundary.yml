@@ -17,11 +17,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'Initial repository bootstrap.' README.md
-          grep -Fq 'Implementation is introduced on a feature branch' README.md
+          grep -Fq 'A historical guest source fixture, `src/plan_review.ores`, is present.' README.md
+          grep -Fq 'Native compiler execution, exact-head guest CI, actor coordination and external provider integration remain unverified.' README.md
           test -z "$(find . -path ./.git -prune -o -type l -print -quit)"
-          if find . -path ./.git -prune -o -type f -name '*.ores' -print -quit | grep -q .; then
-            echo 'Native actor source exists but README still claims initial bootstrap.' >&2
-            exit 1
-          fi
-          echo 'BOOTSTRAP_BOUNDARY_PASS; actor coordination execution remains NOT_EXECUTED.'
+          actual="$(git ls-files -- '*.ores' '*.atto')"
+          test "$actual" = 'src/plan_review.ores'
+          test -f src/plan_review.ores
+          echo 'BOOTSTRAP_BOUNDARY_PASS; historical source present, actor coordination execution remains NOT_EXECUTED.'
